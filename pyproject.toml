@@ -42,7 +42,7 @@ synpareia-trust-mcp = "synpareia_trust_mcp.server:main"
 
 [project.urls]
 Homepage = "https://synpareia.com"
-Repository = "https://github.com/synpareia/synpareia"
+Repository = "https://github.com/synpareia/trust-mcp"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/synpareia_trust_mcp"]

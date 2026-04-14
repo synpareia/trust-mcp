@@ -30,6 +30,16 @@ class TestConfigDefaults:
             config = Config.load()
             assert config.auto_register is True
 
+    def test_default_witness_url_is_none(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            config = Config.load()
+            assert config.witness_url is None
+
+    def test_default_witness_token_is_none(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            config = Config.load()
+            assert config.witness_token is None
+
 
 class TestConfigFromEnv:
     def test_custom_data_dir(self) -> None:
@@ -57,6 +67,16 @@ class TestConfigFromEnv:
             config = Config.load()
             assert config.auto_register is False
 
+    def test_witness_url(self) -> None:
+        with patch.dict(os.environ, {"SYNPAREIA_WITNESS_URL": "https://witness.example.com"}):
+            config = Config.load()
+            assert config.witness_url == "https://witness.example.com"
+
+    def test_witness_token(self) -> None:
+        with patch.dict(os.environ, {"SYNPAREIA_WITNESS_TOKEN": "secret123"}):
+            config = Config.load()
+            assert config.witness_token == "secret123"
+
 
 class TestConfigFrozen:
     def test_config_is_immutable(self) -> None:
@@ -65,6 +85,8 @@ class TestConfigFrozen:
             display_name=None,
             network_url=None,
             auto_register=True,
+            witness_url=None,
+            witness_token=None,
         )
         import pytest
 

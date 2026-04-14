@@ -15,6 +15,8 @@ class Config:
     display_name: str | None
     network_url: str | None
     auto_register: bool
+    witness_url: str | None
+    witness_token: str | None
 
     @classmethod
     def load(cls) -> Config:
@@ -23,4 +25,6 @@ class Config:
             display_name=os.environ.get("SYNPAREIA_DISPLAY_NAME"),
             network_url=os.environ.get("SYNPAREIA_NETWORK_URL"),
             auto_register=os.environ.get("SYNPAREIA_AUTO_REGISTER", "true").lower() == "true",
+            witness_url=os.environ.get("SYNPAREIA_WITNESS_URL"),
+            witness_token=os.environ.get("SYNPAREIA_WITNESS_TOKEN"),
         )

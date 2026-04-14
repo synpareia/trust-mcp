@@ -57,6 +57,8 @@ class TestIdentityResource:
             display_name=None,
             network_url="https://api.example.com",
             auto_register=True,
+            witness_url=None,
+            witness_token=None,
         )
         cm = ConversationManager(profile_manager, config.data_dir)
         ctx = FakeContext(FakeLifespan(config, profile_manager, cm))

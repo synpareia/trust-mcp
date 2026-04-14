@@ -26,6 +26,8 @@ def config(tmp_data_dir: Path) -> Config:
         display_name="Test Agent",
         network_url=None,
         auto_register=False,
+        witness_url=None,
+        witness_token=None,
     )
 
 

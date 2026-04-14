@@ -40,6 +40,12 @@ class TestMCPServerSetup:
             "end_conversation",
             "get_conversation_proof",
             "list_conversations",
+            "get_witness_info",
+            "request_timestamp_seal",
+            "request_state_seal",
+            "verify_seal_offline",
+            "submit_blind_conclusion",
+            "get_blind_conclusion",
         }
         assert expected_tools.issubset(tool_names), f"Missing tools: {expected_tools - tool_names}"
 
@@ -66,7 +72,7 @@ class TestMCPServerSetup:
         from synpareia_trust_mcp.server import mcp
 
         tool_count = len(mcp._tool_manager._tools)
-        assert tool_count == 12, f"Expected 12 tools, got {tool_count}"
+        assert tool_count == 18, f"Expected 18 tools, got {tool_count}"
 
 
 class TestMCPLifespan:
@@ -103,4 +109,4 @@ class TestEntryPoint:
         """Package metadata should be accessible."""
         import synpareia_trust_mcp
 
-        assert synpareia_trust_mcp.__version__ == "0.1.0"
+        assert synpareia_trust_mcp.__version__ == "0.2.0"

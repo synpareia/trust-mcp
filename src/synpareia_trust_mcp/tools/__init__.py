@@ -5,4 +5,5 @@ from synpareia_trust_mcp.tools import (  # noqa: F401
     conversation,
     identity,
     trust,
+    witness,
 )

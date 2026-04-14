@@ -1029,23 +1029,28 @@ wheels = [
 
 [[package]]
 name = "synpareia"
-version = "0.1.0"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5b/12/769d9c4dd5589cabc161563ec2aaae11e301631f71db1c1c4d7727536590/synpareia-0.1.0.tar.gz", hash = "sha256:ac5563548a914d078c8fbc5a84c58a2c269528caa496377e511193ffd33e4968", size = 67161, upload-time = "2026-04-12T10:48:42.569Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ff/53/c4d5245e2f8892d937984ead27cd39b95350118e77548382c7bd7d9345b2/synpareia-0.2.0.tar.gz", hash = "sha256:19386de873b11164c18468967f93329a17fef5f877321a18f5b39e3a606f1d17", size = 100018, upload-time = "2026-04-14T05:17:37.927Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a4/b2/f2e11db1094096ff22a9d768d6ec16ad77bfe4aa14d1af8727b377a72fa8/synpareia-0.1.0-py3-none-any.whl", hash = "sha256:c8c6655843afd48a68a32328948617fcf8df1fd154faf53c50d0f4f41a25287c", size = 24874, upload-time = "2026-04-12T10:48:40.593Z" },
+    { url = "https://files.pythonhosted.org/packages/00/72/cb8b618f99633c5dffe4e5451ea14b229cb93e931208c39277c9dad684cb/synpareia-0.2.0-py3-none-any.whl", hash = "sha256:a125c43807ac0825b98d6d4fa4bf3944ae2d81633a85f2ff3fdb753c4eee34e3", size = 29650, upload-time = "2026-04-14T05:17:36.501Z" },
+]
+
+[package.optional-dependencies]
+witness = [
+    { name = "httpx" },
 ]
 
 [[package]]
 name = "synpareia-trust-mcp"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
-    { name = "synpareia" },
+    { name = "synpareia", extra = ["witness"] },
 ]
 
 [package.optional-dependencies]
@@ -1055,21 +1060,17 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
-network = [
-    { name = "httpx" },
-]
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", marker = "extra == 'network'", specifier = ">=0.27" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
-    { name = "synpareia", specifier = ">=0.1.0" },
+    { name = "synpareia", extras = ["witness"], specifier = ">=0.2.0" },
 ]
-provides-extras = ["network", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "tomli"

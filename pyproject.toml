@@ -34,6 +34,8 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.9",
     "mypy>=1.10",
+    "hypothesis>=6.100",
+    "bandit>=1.8",
 ]
 
 [project.scripts]
@@ -53,6 +55,12 @@ disallow_untyped_defs = true
 # MCP tool return types are inherently untyped JSON dicts
 disable_error_code = ["type-arg"]
 
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = [
+    "B101",  # assert — used for type narrowing of optional attributes
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -67,5 +75,8 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "TCH"]
 # Path/ProfileManager used at runtime in type hints (no `from __future__ import annotations`)
 "src/synpareia_trust_mcp/conversations.py" = ["TCH001", "TCH003"]
 "src/synpareia_trust_mcp/profile.py" = ["TCH003"]
+# Content-heavy files: area guides and orient output are user-facing prose
+"src/synpareia_trust_mcp/guides.py" = ["E501"]
+"src/synpareia_trust_mcp/tools/orient.py" = ["E501"]
 # Test fixtures use annotations at runtime for pytest
 "tests/*.py" = ["TCH001", "TCH003"]

@@ -25,10 +25,25 @@ class TestConfigDefaults:
             config = Config.load()
             assert config.network_url is None
 
-    def test_default_auto_register_is_true(self) -> None:
+    def test_default_auto_register_is_false(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             config = Config.load()
-            assert config.auto_register is True
+            assert config.auto_register is False
+
+    def test_default_private_key_b64_is_none(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            config = Config.load()
+            assert config.private_key_b64 is None
+
+    def test_default_moltbook_api_url_is_none(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            config = Config.load()
+            assert config.moltbook_api_url is None
+
+    def test_default_moltrust_api_key_is_none(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            config = Config.load()
+            assert config.moltrust_api_key is None
 
     def test_default_witness_url_is_none(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -77,16 +92,34 @@ class TestConfigFromEnv:
             config = Config.load()
             assert config.witness_token == "secret123"
 
+    def test_private_key_b64(self) -> None:
+        with patch.dict(os.environ, {"SYNPAREIA_PRIVATE_KEY_B64": "dGVzdGtleQ=="}):
+            config = Config.load()
+            assert config.private_key_b64 == "dGVzdGtleQ=="
+
+    def test_moltbook_api_url(self) -> None:
+        with patch.dict(os.environ, {"SYNPAREIA_MOLTBOOK_API_URL": "https://moltbook.com"}):
+            config = Config.load()
+            assert config.moltbook_api_url == "https://moltbook.com"
+
+    def test_moltrust_api_key(self) -> None:
+        with patch.dict(os.environ, {"SYNPAREIA_MOLTRUST_API_KEY": "mt_key_123"}):
+            config = Config.load()
+            assert config.moltrust_api_key == "mt_key_123"
+
 
 class TestConfigFrozen:
     def test_config_is_immutable(self) -> None:
         config = Config(
             data_dir=Path("/tmp"),
             display_name=None,
+            private_key_b64=None,
             network_url=None,
             auto_register=True,
             witness_url=None,
             witness_token=None,
+            moltbook_api_url=None,
+            moltrust_api_key=None,
         )
         import pytest
 

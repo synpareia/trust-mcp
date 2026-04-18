@@ -28,18 +28,23 @@ class TestMCPServerSetup:
         tool_names = set(tool_manager._tools.keys())
 
         expected_tools = {
-            "get_my_identity",
-            "sign_content",
-            "verify_signature",
-            "check_agent_trust",
-            "verify_identity",
-            "seal_commitment",
-            "reveal_commitment",
-            "start_conversation",
-            "add_to_conversation",
-            "end_conversation",
-            "get_conversation_proof",
-            "list_conversations",
+            # Information architecture (Tier 1 & 2)
+            "orient",
+            "learn",
+            # Claims and verification
+            "make_claim",
+            "verify_claim",
+            # Trust evaluation
+            "evaluate_agent",
+            # Independence proofs
+            "prove_independence",
+            # Recording
+            "record_interaction",
+            "add_to_recording",
+            "end_recording",
+            "get_proof",
+            "my_recordings",
+            # Witness
             "get_witness_info",
             "request_timestamp_seal",
             "request_state_seal",
@@ -57,22 +62,24 @@ class TestMCPServerSetup:
         template_uris = set(resource_manager._templates.keys())
 
         assert "synpareia://identity" in template_uris
-        assert "synpareia://conversations" in template_uris
+        assert "synpareia://recordings" in template_uris
 
-    def test_instructions_present(self) -> None:
-        """Server instructions should be set for agent guidance."""
+    def test_instructions_are_tier0(self) -> None:
+        """Server instructions should be the Tier 0 entry point text."""
         from synpareia_trust_mcp.server import mcp
 
         assert mcp.instructions is not None
-        assert "Trust Toolkit" in mcp.instructions
-        assert "get_my_identity" in mcp.instructions
+        assert "orient" in mcp.instructions
+        assert "Trust tools" in mcp.instructions
 
     def test_tool_count(self) -> None:
         """Track the tool count to catch accidental additions/removals."""
         from synpareia_trust_mcp.server import mcp
 
         tool_count = len(mcp._tool_manager._tools)
-        assert tool_count == 18, f"Expected 18 tools, got {tool_count}"
+        # 2 (orient/learn) + 2 (make_claim/verify_claim) + 1 (evaluate_agent)
+        # + 1 (prove_independence) + 5 (recording) + 6 (witness) = 17
+        assert tool_count == 17, f"Expected 17 tools, got {tool_count}"
 
 
 class TestMCPLifespan:

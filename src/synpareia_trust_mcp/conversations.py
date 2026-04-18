@@ -6,12 +6,43 @@ import base64
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import synpareia
 
 from synpareia_trust_mcp.profile import ProfileManager
+
+MAX_DESCRIPTION_LEN = 2048
+MAX_COUNTERPARTY_LEN = 256
+MAX_NOTES_LEN = 4096
+MAX_CONTENT_LEN = 65_536
+MAX_ACTIVE_RECORDINGS = 100
+STALE_RECORDING_AGE = timedelta(hours=24)
+
+ALLOWED_EVENT_TYPES = frozenset({"message", "thought", "observation", "decision"})
+
+
+def _looks_unsafe(conversation_id: str) -> bool:
+    """True if the id could escape the data dir if joined into a path.
+
+    Refuse any id containing path separators, null bytes, or parent
+    references. The well-formed ids we issue are `conv_<12 hex>` or
+    UUID strings, neither of which needs these characters.
+    """
+    return (
+        "/" in conversation_id
+        or "\\" in conversation_id
+        or "\x00" in conversation_id
+        or ".." in conversation_id
+    )
+
+
+def _check_len(field: str, value: str, max_len: int) -> None:
+    """Raise ValueError if value exceeds max_len bytes."""
+    if len(value.encode("utf-8")) > max_len:
+        msg = f"{field} too long (max {max_len} bytes)"
+        raise ValueError(msg)
 
 
 @dataclass
@@ -39,7 +70,23 @@ class ConversationManager:
         description: str,
         counterparty: str | None = None,
     ) -> ActiveConversation:
-        """Start a new verified conversation."""
+        """Start a new verified conversation.
+
+        Enforces ADV-014 input size caps and ADV-015 active-recording cap
+        (with age-based eviction of stale recordings).
+        """
+        _check_len("description", description, MAX_DESCRIPTION_LEN)
+        if counterparty is not None:
+            _check_len("counterparty_did", counterparty, MAX_COUNTERPARTY_LEN)
+
+        self._evict_stale()
+        if len(self._active) >= MAX_ACTIVE_RECORDINGS:
+            msg = (
+                f"Too many active recordings ({len(self._active)}/"
+                f"{MAX_ACTIVE_RECORDINGS}). End an existing recording first."
+            )
+            raise ValueError(msg)
+
         conversation_id = f"conv_{uuid.uuid4().hex[:12]}"
         chain = synpareia.create_chain(
             self._pm.profile,
@@ -77,7 +124,19 @@ class ConversationManager:
         block_type: str = "message",
         metadata: dict | None = None,
     ) -> int:
-        """Add a block to an active conversation. Returns the new block count."""
+        """Add a block to an active conversation. Returns the new block count.
+
+        `block_type` must be one of ALLOWED_EVENT_TYPES — reserves SYSTEM for
+        toolkit-internal markers so callers cannot forge conversation_started
+        / conversation_ended blocks (ADV-019). Content is size-capped to
+        prevent unbounded-input memory DoS (ADV-014).
+        """
+        if block_type not in ALLOWED_EVENT_TYPES:
+            allowed = sorted(ALLOWED_EVENT_TYPES)
+            msg = f"invalid event_type '{block_type}'. Allowed: {allowed}"
+            raise ValueError(msg)
+        _check_len("content", content, MAX_CONTENT_LEN)
+
         conv = self._get_active(conversation_id)
         block = synpareia.create_block(
             self._pm.profile,
@@ -96,6 +155,9 @@ class ConversationManager:
         notes: str | None = None,
     ) -> dict:
         """End a conversation, persist it, and return summary."""
+        if notes is not None:
+            _check_len("notes", notes, MAX_NOTES_LEN)
+
         conv = self._get_active(conversation_id)
 
         end_data: dict[str, object] = {"event": "conversation_ended"}
@@ -125,9 +187,28 @@ class ConversationManager:
         }
 
     def export(self, conversation_id: str) -> dict:
-        """Export an active conversation as verifiable JSON."""
-        conv = self._get_active(conversation_id)
-        return synpareia.export_chain(conv.chain)
+        """Export a conversation as verifiable JSON.
+
+        Reads from active in-memory state if the recording is in flight;
+        falls back to the persisted JSON if the recording has been
+        finalized via `end()`. Raises ValueError if neither source has
+        it, or if the id contains path separators (would escape data dir).
+        """
+        conv = self._active.get(conversation_id)
+        if conv is not None:
+            return synpareia.export_chain(conv.chain)
+
+        if _looks_unsafe(conversation_id):
+            msg = f"No recording '{conversation_id}' found."
+            raise ValueError(msg)
+
+        persisted_path = self._data_dir / "conversations" / f"{conversation_id}.json"
+        if persisted_path.is_file():
+            return json.loads(persisted_path.read_text())
+
+        active = list(self._active.keys()) or "(none)"
+        msg = f"No recording '{conversation_id}' found. Active: {active}. Not on disk either."
+        raise ValueError(msg)
 
     def seal_commitment(self, content: str) -> dict:
         """Create a sealed commitment. Returns the hash and nonce to the caller.
@@ -207,8 +288,30 @@ class ConversationManager:
             raise ValueError(msg)
         return conv
 
+    def _evict_stale(self) -> None:
+        """Drop active recordings older than STALE_RECORDING_AGE.
+
+        Without this, a caller that opens recordings but never ends them
+        accumulates entries indefinitely (ADV-015). Stale entries are
+        discarded without persistence — they were never `end()`ed, so
+        there is no signed chain to preserve.
+        """
+        cutoff = datetime.now(UTC) - STALE_RECORDING_AGE
+        stale = [cid for cid, c in self._active.items() if c.started_at < cutoff]
+        for cid in stale:
+            del self._active[cid]
+
     def _persist_conversation(self, conversation_id: str, export: dict) -> None:
+        import os
+
         conv_dir = self._data_dir / "conversations"
         conv_dir.mkdir(parents=True, exist_ok=True)
         path = conv_dir / f"{conversation_id}.json"
-        path.write_text(json.dumps(export, indent=2))
+        # Atomic create with 0o600 — don't leave a world-readable window
+        # between write and chmod (companion to ADV-020).
+        payload = json.dumps(export, indent=2).encode()
+        if path.exists():
+            path.unlink()
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(payload)

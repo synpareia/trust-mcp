@@ -54,10 +54,13 @@ class TestCreateWitnessClient:
         config = Config(
             data_dir=tmp_data_dir,
             display_name=None,
+            private_key_b64=None,
             network_url=None,
             auto_register=False,
             witness_url="https://witness.example.com",
             witness_token=None,
+            moltbook_api_url=None,
+            moltrust_api_key=None,
         )
         client = _create_witness_client(config)
         assert client is not None
@@ -67,10 +70,13 @@ class TestCreateWitnessClient:
         config = Config(
             data_dir=tmp_data_dir,
             display_name=None,
+            private_key_b64=None,
             network_url=None,
             auto_register=False,
             witness_url="https://witness.example.com",
             witness_token="my-secret-token",
+            moltbook_api_url=None,
+            moltrust_api_key=None,
         )
         client = _create_witness_client(config)
         assert client is not None

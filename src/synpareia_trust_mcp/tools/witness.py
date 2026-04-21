@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import base64
+import re
 
 from mcp.server.fastmcp import Context
 from mcp.server.session import ServerSession
 
 from synpareia_trust_mcp.app import AppContext, mcp
+
+_DID_PATTERN = re.compile(r"^did:synpareia:[0-9a-f]{64}$")
+_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9.\-+]{1,32}$")
 
 
 def _require_witness(app: AppContext) -> None:
@@ -19,6 +23,25 @@ def _require_witness(app: AppContext) -> None:
             "Install with: pip install synpareia-trust-mcp[network]"
         )
         raise ValueError(msg)
+
+
+def _safe_witness_id(val: object) -> str:
+    """Return witness_id iff it is a well-formed did:synpareia DID.
+
+    A malicious/MITM'd witness can return anything in this field; callers
+    surface it to LLMs, so reject anything that isn't the expected shape
+    rather than passing arbitrary strings through (ADV-012).
+    """
+    if isinstance(val, str) and _DID_PATTERN.match(val):
+        return val
+    return "did:invalid"
+
+
+def _safe_witness_version(val: object) -> str:
+    """Return version iff short and printable ASCII; else a neutral tag."""
+    if isinstance(val, str) and _VERSION_PATTERN.match(val):
+        return val
+    return "unknown"
 
 
 @mcp.tool()
@@ -37,10 +60,10 @@ async def get_witness_info(ctx: Context[ServerSession, AppContext]) -> dict:
         assert app.witness_client is not None
         info = await app.witness_client.get_witness_info()
         return {
-            "witness_id": info.witness_id,
+            "witness_id": _safe_witness_id(info.witness_id),
             "public_key_b64": info.public_key_b64,
             "public_key_hex": info.public_key_hex,
-            "version": info.version,
+            "version": _safe_witness_version(info.version),
         }
     except Exception as e:
         return {"error": str(e)}
@@ -70,7 +93,7 @@ async def request_timestamp_seal(
         seal = await app.witness_client.timestamp_seal(profile.id, block_hash)
         return {
             "seal_type": str(seal.seal_type),
-            "witness_id": seal.witness_id,
+            "witness_id": _safe_witness_id(seal.witness_id),
             "sealed_at": seal.sealed_at.isoformat(),
             "target_block_hash": block_hash_hex,
             "witness_signature_b64": base64.b64encode(seal.witness_signature).decode(),
@@ -102,7 +125,7 @@ async def request_state_seal(
         seal = await app.witness_client.state_seal(profile.id, chain_id, chain_head)
         return {
             "seal_type": str(seal.seal_type),
-            "witness_id": seal.witness_id,
+            "witness_id": _safe_witness_id(seal.witness_id),
             "sealed_at": seal.sealed_at.isoformat(),
             "target_chain_id": seal.target_chain_id,
             "target_chain_head": chain_head_hex,

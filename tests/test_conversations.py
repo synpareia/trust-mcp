@@ -124,7 +124,10 @@ class TestConversationErrors:
     def test_export_nonexistent_conversation(
         self, conversation_manager: ConversationManager
     ) -> None:
-        with pytest.raises(ValueError, match="No active conversation"):
+        # The export() path distinguishes between in-memory-active,
+        # persisted-to-disk, and not-found-anywhere — make sure the
+        # error reflects that third case.
+        with pytest.raises(ValueError, match="No recording .* found"):
             conversation_manager.export("conv_doesnotexist")
 
 

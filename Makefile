@@ -1,4 +1,4 @@
-.PHONY: format lint typecheck test clean build
+.PHONY: format lint typecheck test clean build security-scan
 
 format:
 	uv run ruff format src/ tests/
@@ -12,6 +12,10 @@ typecheck:
 
 test:
 	uv run pytest tests/ -v
+
+security-scan:
+	uv run ruff check src/
+	uv run bandit -r src/ -c pyproject.toml
 
 test-cov:
 	uv run pytest tests/ -v --cov=synpareia_trust_mcp --cov-report=term-missing

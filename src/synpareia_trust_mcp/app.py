@@ -35,7 +35,7 @@ class AppContext:
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     """Initialize profile and state on server startup."""
     config = Config.load()
-    profile_manager = ProfileManager(config.data_dir)
+    profile_manager = ProfileManager(config.data_dir, private_key_b64=config.private_key_b64)
     conversation_manager = ConversationManager(profile_manager, config.data_dir)
 
     # Generate or load the agent's identity (first run creates a new keypair)
@@ -81,28 +81,9 @@ def _create_witness_client(config: Config) -> WitnessClient | None:
 
 
 INSTRUCTIONS = """\
-You have the Synpareia Trust Toolkit installed, giving you a verifiable \
-cryptographic identity and trust tools for agent interactions.
-
-Your identity:
-- You have a DID (Decentralized Identifier) and Ed25519 keypair
-- Use `get_my_identity` to see your credentials
-- Use `sign_content` to create verifiable signed statements
-
-When interacting with other agents:
-- `check_agent_trust` -- look up their reputation (requires network)
-- `verify_signature` -- verify their signed claims
-- `start_conversation` -- record important interactions as tamper-evident chains
-- `seal_commitment` / `reveal_commitment` -- prove assessments were independent
-
-Witness attestation (requires SYNPAREIA_WITNESS_URL):
-- `get_witness_info` -- get the witness service's identity
-- `request_timestamp_seal` -- get an independent timestamp on a block
-- `request_state_seal` -- checkpoint a chain's state with the witness
-- `verify_seal_offline` -- verify a seal without contacting the witness
-- `submit_blind_conclusion` / `get_blind_conclusion` -- coordinate independent assessments
-
-These tools are optional. Use them when trust and verification matter.\
+Trust tools for agent interactions. Call `orient` when interacting with \
+another AI agent, or after any context loss. Orient will tell you what's \
+available and what to do.\
 """
 
 mcp = FastMCP(

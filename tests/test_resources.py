@@ -8,7 +8,7 @@ from pathlib import Path
 from synpareia_trust_mcp.config import Config
 from synpareia_trust_mcp.conversations import ConversationManager
 from synpareia_trust_mcp.profile import ProfileManager
-from synpareia_trust_mcp.resources import conversations_resource, identity_resource
+from synpareia_trust_mcp.resources import identity_resource, recordings_resource
 
 
 class FakeLifespan:
@@ -55,10 +55,13 @@ class TestIdentityResource:
         config = Config(
             data_dir=tmp_data_dir,
             display_name=None,
+            private_key_b64=None,
             network_url="https://api.example.com",
             auto_register=True,
             witness_url=None,
             witness_token=None,
+            moltbook_api_url=None,
+            moltrust_api_key=None,
         )
         cm = ConversationManager(profile_manager, config.data_dir)
         ctx = FakeContext(FakeLifespan(config, profile_manager, cm))
@@ -67,33 +70,33 @@ class TestIdentityResource:
         assert data["network_configured"] is True
 
 
-class TestConversationsResource:
-    def test_empty_when_no_conversations(
+class TestRecordingsResource:
+    def test_empty_when_no_recordings(
         self,
         config: Config,
         profile_manager: ProfileManager,
         conversation_manager: ConversationManager,
     ) -> None:
         ctx = FakeContext(FakeLifespan(config, profile_manager, conversation_manager))
-        result = conversations_resource(ctx)  # type: ignore[arg-type]
+        result = recordings_resource(ctx)  # type: ignore[arg-type]
         data = json.loads(result)
 
         assert data["active"] == []
         assert data["recent"] == []
 
-    def test_shows_active_conversation(
+    def test_shows_active_recording(
         self,
         config: Config,
         profile_manager: ProfileManager,
         conversation_manager: ConversationManager,
     ) -> None:
-        conversation_manager.start("Test conversation")
+        conversation_manager.start("Test recording")
         ctx = FakeContext(FakeLifespan(config, profile_manager, conversation_manager))
-        result = conversations_resource(ctx)  # type: ignore[arg-type]
+        result = recordings_resource(ctx)  # type: ignore[arg-type]
         data = json.loads(result)
 
         assert len(data["active"]) == 1
-        assert data["active"][0]["description"] == "Test conversation"
+        assert data["active"][0]["description"] == "Test recording"
 
     def test_shows_recent_completed(
         self,
@@ -101,11 +104,11 @@ class TestConversationsResource:
         profile_manager: ProfileManager,
         conversation_manager: ConversationManager,
     ) -> None:
-        conv = conversation_manager.start("Completed conv")
+        conv = conversation_manager.start("Completed recording")
         conversation_manager.end(conv.conversation_id)
 
         ctx = FakeContext(FakeLifespan(config, profile_manager, conversation_manager))
-        result = conversations_resource(ctx)  # type: ignore[arg-type]
+        result = recordings_resource(ctx)  # type: ignore[arg-type]
         data = json.loads(result)
 
         assert len(data["active"]) == 0

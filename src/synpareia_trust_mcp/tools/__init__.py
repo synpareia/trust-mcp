@@ -2,8 +2,9 @@
 
 from synpareia_trust_mcp.tools import (  # noqa: F401
     commitment,
-    conversation,
     identity,
+    orient,
+    recording,
     trust,
     witness,
 )

@@ -1,82 +1,190 @@
-"""Identity tools -- manage and present your cryptographic identity."""
+"""Claim and verification tools — make verifiable claims, verify others' claims."""
 
 from __future__ import annotations
 
 import base64
+from typing import Any
 
 import synpareia
 from mcp.server.fastmcp import Context
-from mcp.server.session import ServerSession
 
 from synpareia_trust_mcp.app import AppContext, mcp
 
 
 @mcp.tool()
-def get_my_identity(ctx: Context[ServerSession, AppContext]) -> dict:
-    """Get your synpareia identity: DID, public key, and profile metadata.
+def make_claim(
+    content: str,
+    ctx: Context,
+    witness: bool = False,
+) -> dict[str, Any]:
+    """Sign content with your private key, creating a verifiable claim.
 
-    Your DID (Decentralized Identifier) is your unique cryptographic identity.
-    Share it with other agents so they can verify your signatures and look you up
-    on the synpareia network.
+    Set witness=True to also get a witness timestamp seal.
     """
-    app = ctx.request_context.lifespan_context
-    profile = app.profile_manager.profile
-    return {
-        "did": profile.id,
-        "public_key_b64": base64.b64encode(profile.public_key).decode(),
-        "display_name": app.config.display_name,
-        "network_registered": False,  # TODO: check actual registration status
-    }
-
-
-@mcp.tool()
-def sign_content(content: str, ctx: Context[ServerSession, AppContext]) -> dict:
-    """Sign content with your private key, producing a verifiable statement.
-
-    The recipient can verify this signature using your public key or DID,
-    proving that you (and only you) authored this content. Use this for
-    any claim you want to be cryptographically attributable to you.
-    """
-    app = ctx.request_context.lifespan_context
+    app: AppContext = ctx.request_context.lifespan_context
     profile = app.profile_manager.profile
 
-    assert profile.private_key is not None  # ProfileManager always has private key
+    assert profile.private_key is not None
     content_bytes = content.encode()
     signature = synpareia.sign(profile.private_key, content_bytes)
 
-    return {
+    result: dict[str, Any] = {
         "content": content,
         "signature_b64": base64.b64encode(signature).decode(),
         "signer_did": profile.id,
         "public_key_b64": base64.b64encode(profile.public_key).decode(),
+        "verification_instructions": {
+            "tool": "verify_claim",
+            "params": {
+                "claim_type": "signature",
+                "content": content,
+                "signature_b64": base64.b64encode(signature).decode(),
+                "public_key_b64": base64.b64encode(profile.public_key).decode(),
+            },
+            "message": f"Verify this claim was signed by {profile.id}.",
+            "manual": (
+                "pip install synpareia && python -c "
+                '"import synpareia; '
+                f"print(synpareia.verify(bytes.fromhex('{profile.public_key.hex()}'), "
+                f"b'{content[:50]}...', "
+                f"bytes.fromhex('{signature.hex()}')))\"",
+            ),
+        },
     }
+
+    if witness and app.witness_client is not None:
+        result["witness_note"] = (
+            "Witness attestation requested — use request_timestamp_seal for the signed block."
+        )
+    elif witness:
+        result["witness_note"] = (
+            "Witness not configured. Claim is signed but not witness-attested. "
+            "Set SYNPAREIA_WITNESS_URL."
+        )
+
+    return result
 
 
 @mcp.tool()
-def verify_signature(
-    content: str,
-    signature_b64: str,
-    public_key_b64: str,
-    ctx: Context[ServerSession, AppContext],
-) -> dict:
-    """Verify that content was signed by the holder of a specific public key.
+def verify_claim(
+    claim_type: str,
+    ctx: Context,
+    content: str | None = None,
+    signature_b64: str | None = None,
+    public_key_b64: str | None = None,
+    agent_did: str | None = None,
+    commitment_hash: str | None = None,
+    nonce_b64: str | None = None,
+) -> dict[str, Any]:
+    """Verify a claim.
 
-    Use this to confirm another agent actually authored a piece of content.
-    You need their public key (from their get_my_identity output or a profile lookup).
-    Works fully offline -- no network required.
+    Types: 'signature' (content+sig+key), 'identity' (did+key),
+    'commitment' (hash+content+nonce).
     """
+    if claim_type == "signature":
+        return _verify_signature(content, signature_b64, public_key_b64)
+    elif claim_type == "identity":
+        return _verify_identity(agent_did, public_key_b64)
+    elif claim_type == "commitment":
+        return _verify_commitment(commitment_hash, content, nonce_b64)
+    else:
+        return {
+            "valid": False,
+            "error": (
+                f"Unknown claim_type: '{claim_type}'. Use 'signature', 'identity', or 'commitment'."
+            ),
+        }
+
+
+def _verify_signature(
+    content: str | None,
+    signature_b64: str | None,
+    public_key_b64: str | None,
+) -> dict[str, Any]:
+    if not all([content, signature_b64, public_key_b64]):
+        return {
+            "valid": False,
+            "error": "Signature verification requires: content, signature_b64, public_key_b64.",
+        }
     try:
-        content_bytes = content.encode()
-        signature = base64.b64decode(signature_b64)
-        public_key = base64.b64decode(public_key_b64)
+        content_bytes = content.encode()  # type: ignore[union-attr]
+        signature = base64.b64decode(signature_b64)  # type: ignore[arg-type]
+        public_key = base64.b64decode(public_key_b64)  # type: ignore[arg-type]
         valid = synpareia.verify(public_key, content_bytes, signature)
     except Exception as e:
         return {"valid": False, "error": str(e)}
 
     signer_profile = synpareia.from_public_key(public_key)
+    return {
+        "valid": valid,
+        "claim_type": "signature",
+        "signer_did": signer_profile.id,
+        "explanation": (
+            "Signature verified. This content was signed by the holder of this key."
+            if valid
+            else "INVALID signature. The content, signature, or key does not match."
+        ),
+    }
+
+
+def _verify_identity(
+    agent_did: str | None,
+    public_key_b64: str | None,
+) -> dict[str, Any]:
+    if not all([agent_did, public_key_b64]):
+        return {
+            "valid": False,
+            "error": "Identity verification requires: agent_did, public_key_b64.",
+        }
+    try:
+        public_key = base64.b64decode(public_key_b64)  # type: ignore[arg-type]
+        derived = synpareia.from_public_key(public_key)
+        matches = derived.id == agent_did
+    except Exception as e:
+        return {"valid": False, "error": str(e)}
+
+    return {
+        "valid": matches,
+        "claim_type": "identity",
+        "claimed_did": agent_did,
+        "derived_did": derived.id,
+        "explanation": (
+            "Identity confirmed. The public key correctly derives this DID."
+            if matches
+            else "MISMATCH: the public key does not derive the claimed DID. "
+            "This agent may be impersonating someone else."
+        ),
+    }
+
+
+def _verify_commitment(
+    commitment_hash: str | None,
+    content: str | None,
+    nonce_b64: str | None,
+) -> dict[str, Any]:
+    if not all([commitment_hash, content, nonce_b64]):
+        return {
+            "valid": False,
+            "error": "Commitment verification requires: commitment_hash, content, nonce_b64.",
+        }
+    try:
+        nonce = base64.b64decode(nonce_b64)  # type: ignore[arg-type]
+        commitment_bytes = bytes.fromhex(commitment_hash)  # type: ignore[arg-type]
+        valid = synpareia.verify_commitment(
+            commitment_bytes,
+            content.encode(),  # type: ignore[union-attr]
+            nonce,
+        )
+    except Exception as e:
+        return {"valid": False, "error": str(e)}
 
     return {
         "valid": valid,
-        "signer_did": signer_profile.id,
-        "content_preview": content[:100] + ("..." if len(content) > 100 else ""),
+        "claim_type": "commitment",
+        "explanation": (
+            "Commitment verified. This content matches the sealed commitment "
+            "— the assessment was independent."
+            if valid
+            else "MISMATCH: the content does not match the commitment."
+        ),
     }

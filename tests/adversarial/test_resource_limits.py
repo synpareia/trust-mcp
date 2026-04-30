@@ -15,9 +15,9 @@ from starlette.routing import Route
 
 from synpareia_trust_mcp import providers
 from synpareia_trust_mcp.tools.recording import (
-    add_to_recording,
-    end_recording,
-    record_interaction,
+    recording_append,
+    recording_end,
+    recording_start,
 )
 
 
@@ -26,13 +26,13 @@ class TestInputSizeLimits:
 
     def test_oversize_description_rejected(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = record_interaction(description="x" * 10_000, ctx=ctx)
+        result = recording_start(description="x" * 10_000, ctx=ctx)
         assert result.get("error"), "oversize description was accepted"
         assert "description" in result["error"].lower()
 
     def test_oversize_counterparty_rejected(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = record_interaction(
+        result = recording_start(
             description="fine",
             counterparty_did="did:x:" + "a" * 1_000,
             ctx=ctx,
@@ -41,29 +41,29 @@ class TestInputSizeLimits:
 
     def test_oversize_content_rejected(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        start = record_interaction(description="fine", ctx=ctx)
+        start = recording_start(description="fine", ctx=ctx)
         rid = start["recording_id"]
 
         # 128 KB content — above the 64 KB cap
-        result = add_to_recording(recording_id=rid, content="x" * 131_072, ctx=ctx)
+        result = recording_append(recording_id=rid, content="x" * 131_072, ctx=ctx)
         assert result.get("error"), "oversize content was accepted"
 
     def test_oversize_notes_rejected(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        start = record_interaction(description="fine", ctx=ctx)
+        start = recording_start(description="fine", ctx=ctx)
         rid = start["recording_id"]
 
-        result = end_recording(recording_id=rid, notes="x" * 10_000, ctx=ctx)
+        result = recording_end(recording_id=rid, notes="x" * 10_000, ctx=ctx)
         assert result.get("error"), "oversize notes was accepted"
 
     def test_normal_sizes_still_work(self, app_ctx) -> None:
         """Caps must not break the normal path — a 500-char description
         and 1 KB content should still round-trip."""
         ctx, _ = app_ctx
-        start = record_interaction(description="x" * 500, ctx=ctx)
+        start = recording_start(description="x" * 500, ctx=ctx)
         assert "error" not in start
 
-        added = add_to_recording(
+        added = recording_append(
             recording_id=start["recording_id"],
             content="y" * 1024,
             ctx=ctx,
@@ -80,7 +80,7 @@ class TestActiveRecordingCap:
         # Open 100 recordings — this is the cap
         opened = 0
         for i in range(100):
-            r = record_interaction(description=f"run-{i}", ctx=ctx)
+            r = recording_start(description=f"run-{i}", ctx=ctx)
             if "error" in r:
                 break
             opened += 1
@@ -88,7 +88,7 @@ class TestActiveRecordingCap:
         assert opened == 100, f"only opened {opened}/100 before error"
 
         # 101st call must be rejected
-        overflow = record_interaction(description="overflow", ctx=ctx)
+        overflow = recording_start(description="overflow", ctx=ctx)
         assert overflow.get("error"), "exceeded 100 active recordings without error"
         assert "too many" in overflow["error"].lower()
 
@@ -100,14 +100,14 @@ class TestActiveRecordingCap:
         ctx, app = app_ctx
 
         # Open one; then manually age its started_at
-        r = record_interaction(description="ancient", ctx=ctx)
+        r = recording_start(description="ancient", ctx=ctx)
         rid = r["recording_id"]
         stale = app.conversation_manager._active[rid]
         stale.started_at = datetime.now(UTC) - timedelta(days=2)
 
         # Now fill to the cap; old one should be evicted first
         for i in range(100):
-            result = record_interaction(description=f"fresh-{i}", ctx=ctx)
+            result = recording_start(description=f"fresh-{i}", ctx=ctx)
             assert "error" not in result, f"failed at fresh-{i}: {result}"
 
         # The stale recording is gone

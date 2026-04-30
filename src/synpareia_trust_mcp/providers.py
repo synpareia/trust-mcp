@@ -12,6 +12,7 @@ Fields arriving from external providers are type-validated and length-capped
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -99,12 +100,19 @@ def _safe_iso_date(val: Any, default: str | None = None) -> str | None:
 
 
 def _safe_number(val: Any) -> int | float | None:
-    """Return val only if it's an int or float (not bool, not NaN)."""
+    """Return val only if it's a finite int or float (not bool, NaN, or ±inf).
+
+    Rejecting ±inf (ADV-054, pentest 2026-04-30): a hostile or compromised
+    Tier-2/Tier-3 provider could otherwise return `Infinity` for a
+    `reputation_score` or `average_rating` and the value would flow
+    through to the caller as a high-confidence numeric trust signal.
+    `math.isfinite` rejects both NaN and ±inf.
+    """
     if isinstance(val, bool):
         return None
     if isinstance(val, int):
         return val
-    if isinstance(val, float) and val == val:  # reject NaN
+    if isinstance(val, float) and math.isfinite(val):
         return val
     return None
 

@@ -39,18 +39,18 @@ class TestMCPServerSetup:
             # Independence proofs
             "prove_independence",
             # Recording
-            "record_interaction",
-            "add_to_recording",
-            "end_recording",
-            "get_proof",
-            "my_recordings",
+            "recording_start",
+            "recording_append",
+            "recording_end",
+            "recording_proof",
+            "recording_list",
             # Witness
-            "get_witness_info",
-            "request_timestamp_seal",
-            "request_state_seal",
-            "verify_seal_offline",
-            "submit_blind_conclusion",
-            "get_blind_conclusion",
+            "witness_info",
+            "witness_seal_timestamp",
+            "witness_seal_state",
+            "witness_verify_seal",
+            "witness_submit_blind",
+            "witness_get_blind",
         }
         assert expected_tools.issubset(tool_names), f"Missing tools: {expected_tools - tool_names}"
 
@@ -78,8 +78,11 @@ class TestMCPServerSetup:
 
         tool_count = len(mcp._tool_manager._tools)
         # 2 (orient/learn) + 2 (make_claim/verify_claim) + 1 (evaluate_agent)
-        # + 1 (prove_independence) + 5 (recording) + 6 (witness) = 17
-        assert tool_count == 17, f"Expected 17 tools, got {tool_count}"
+        # + 1 (prove_independence) + 5 (recording) + 6 (witness)
+        # + 4 (remember/recall/add_evaluation/find_evaluations)
+        # + 1 (check_media_signals) + 1 (attested_reputation)
+        # + 2 (encode_signed/decode_signed) = 25
+        assert tool_count == 25, f"Expected 25 tools, got {tool_count}"
 
 
 class TestMCPLifespan:
@@ -116,4 +119,4 @@ class TestEntryPoint:
         """Package metadata should be accessible."""
         import synpareia_trust_mcp
 
-        assert synpareia_trust_mcp.__version__ == "0.2.0"
+        assert synpareia_trust_mcp.__version__ == "0.4.0"

@@ -45,24 +45,33 @@ synpareia-trust-mcp
 
 ## Tools
 
+17 tools across 7 areas. Start by calling `orient` — it summarises every area and points you to the relevant `learn` topic.
+
 | Tool | What it does | Offline? |
 |------|-------------|:-------:|
-| `get_my_identity` | Your DID, public key, and profile | Yes |
-| `sign_content` | Sign content with your private key | Yes |
-| `verify_signature` | Verify another agent's signed content | Yes |
-| `verify_identity` | Confirm a DID matches a public key | Yes |
-| `check_agent_trust` | Look up an agent's reputation | No |
-| `seal_commitment` | Seal an assessment before seeing others' | Yes |
-| `reveal_commitment` | Prove your commitment matches the seal | Yes |
-| `start_conversation` | Begin a verified interaction record | Yes |
-| `add_to_conversation` | Record a message or event | Yes |
-| `end_conversation` | Close and optionally rate | Yes |
-| `get_conversation_proof` | Export portable, verifiable proof | Yes |
-| `list_conversations` | List all active conversations | Yes |
+| `orient` | Discover all capabilities and which area fits your goal | Yes |
+| `learn` | Get a focused guide for one area (usage, examples, pitfalls) | Yes |
+| `make_claim` | Sign content with your private key — proves authorship | Yes |
+| `verify_claim` | Verify another agent's signature, commitment, or identity claim | Yes |
+| `prove_independence` | Commit to an assessment before seeing the other party's | Yes |
+| `evaluate_agent` | Multi-provider trust evaluation (synpareia, Moltbook, MolTrust) | No |
+| `recording_start` | Begin a verified interaction record | Yes |
+| `recording_append` | Record a message or event | Yes |
+| `recording_end` | Close and optionally rate | Yes |
+| `recording_proof` | Export portable, verifiable proof | Yes |
+| `recording_list` | List recordings (active and closed) | Yes |
+| `witness_info` | Witness identity, public key, service URL | No |
+| `witness_seal_timestamp` | Timestamp seal over a block hash | No |
+| `witness_seal_state` | State seal over a chain head | No |
+| `witness_verify_seal` | Offline verification of either seal type | Yes |
+| `witness_submit_blind` | Submit a blind conclusion through the witness | No |
+| `witness_get_blind` | Retrieve a prior blind conclusion | No |
 
-11 of 12 tools work fully offline. No network? No problem.
+14 of 17 tools work fully offline. The three network-touching tools (`evaluate_agent`, and the `witness_*` request tools) need a reachable provider or witness service.
 
-Network-only discovery tools (`search_agents`, `get_agent_profile`) ship in v0.2.
+### Upgrading from 0.2.0
+
+The tool surface was reshaped in 0.3.0. `sign_content` → `make_claim`, `verify_signature` → `verify_claim`, `start_conversation`/`end_conversation` → `recording_start`/`recording_end`, and so on. See `CHANGELOG.md` for the full migration table — old names were removed outright, no shim.
 
 ## How It Works
 
@@ -78,13 +87,17 @@ The Trust Toolkit is built on [synpareia](https://pypi.org/project/synpareia/) �
 
 ### Verifying a counterparty
 
-Your agent is about to delegate a task to another agent. First, check trust:
+Your agent is about to delegate a task to another agent. First, check trust across every configured provider:
 
 ```
--> check_agent_trust("did:synpareia:a1b2c3...")
+-> evaluate_agent(namespace="synpareia", id="did:synpareia:a1b2c3...")
 
-Reputation: 0.92 | Verified conversations: 47 | Member since: 2026-03
-Recent: 12 positive ratings, 1 neutral, 0 negative
+tier1: (none — no prior contact in your local journal)
+tier2: (namespace=synpareia has no Tier-2 adapter)
+tier3:
+  synpareia — reputation 0.92, 47 verified conversations, member since 2026-03
+  moltrust  — score 4.6/5 across 18 ratings
+tier4_available: true  (synpareia DID — encode_signed / decode_signed work)
 ```
 
 ### Making a provably independent assessment
@@ -92,14 +105,16 @@ Recent: 12 positive ratings, 1 neutral, 0 negative
 Two agents need to rate a proposal independently:
 
 ```
--> seal_commitment("Rating: 4/5 -- strong technical approach, weak go-to-market")
+-> prove_independence("Rating: 4/5 -- strong technical approach, weak go-to-market")
 
-Sealed. commitment_hash: 7f3a...  nonce_b64: cH/iD5Pm...
+Committed. commitment_hash: 7f3a...  nonce_b64: cH/iD5Pm...
 Share ONLY the hash. Keep the nonce secret until reveal.
 
 [... other agent reveals their rating ...]
 
--> reveal_commitment("7f3a...", "Rating: 4/5 -- strong technical approach, weak go-to-market", "cH/iD5Pm...")
+-> verify_claim(claim_type="commitment", commitment_hash="7f3a...",
+                content="Rating: 4/5 -- strong technical approach, weak go-to-market",
+                nonce_b64="cH/iD5Pm...")
 
 Verified: content matches the sealed commitment.
 The assessment was committed before being revealed.
@@ -108,17 +123,17 @@ The assessment was committed before being revealed.
 ### Recording an important interaction
 
 ```
--> start_conversation("Task delegation negotiation with Agent Y")
+-> recording_start("Task delegation negotiation with Agent Y")
 
-Recording. Conversation ID: conv_x7y8z9
+Recording. Recording ID: rec_x7y8z9
 
-[... interaction happens, add_to_conversation for each exchange ...]
+[... interaction happens, recording_append for each exchange ...]
 
--> end_conversation("conv_x7y8z9", rating=4, notes="Delivered on time, good quality")
+-> recording_end("rec_x7y8z9", rating=4, notes="Delivered on time, good quality")
 
-Conversation recorded. 12 blocks, signed and hash-linked.
+Recording closed. 12 blocks, signed and hash-linked.
 
--> get_conversation_proof("conv_x7y8z9")
+-> recording_proof("rec_x7y8z9")
 
 Exported: 4.2KB JSON, independently verifiable with synpareia.verify_export()
 ```
@@ -133,6 +148,60 @@ Environment variables (all optional):
 | `SYNPAREIA_DISPLAY_NAME` | *(none)* | Human-readable name for your agent |
 | `SYNPAREIA_NETWORK_URL` | *(none)* | Synpareia network API endpoint |
 | `SYNPAREIA_AUTO_REGISTER` | `true` | Register profile on network automatically |
+
+## Data, storage, and privacy
+
+The Trust Toolkit is **local-first**. Every file the toolkit creates lives under
+`SYNPAREIA_DATA_DIR` (default `~/.synpareia`) on the machine running your agent;
+nothing is sent off-machine unless you explicitly configure a network endpoint.
+
+What's stored:
+
+- **Profile** (`profile.json`, mode `0600`) — your agent's Ed25519 keypair and
+  display name. The private key never leaves the file.
+- **Conversation chains** (`conversations/<chain_id>/`) — your agent's signed
+  records of conversations and claims, linked into a chain so any tampering is
+  detectable.
+- **Counterparty journal** (`counterparties.json`, mode `0600`) — your agent's
+  notes about other agents you've encountered: their IDs, your evaluations,
+  signed claims they've made to you. **This is your local log; entries are
+  visible only to you and your agent.** Other agents do not see your journal.
+  When you record an evaluation about a counterparty, that observation stays on
+  your disk — there is no automatic upload, no shared reputation database, no
+  cross-agent broadcast.
+- **Recordings** (`recordings/<id>/`) — full message-by-message logs of
+  conversations you explicitly asked the toolkit to record. Same locality
+  guarantees.
+
+What flows off-machine (only with explicit configuration):
+
+- **Tier-2 platform queries** — if `SYNPAREIA_MOLTBOOK_API_URL` or other
+  Tier-2 adapter URLs are set, `check_media_signals` calls those endpoints with
+  the counterparty's handle. Otherwise, no network calls.
+- **Tier-3 attestation queries** — if `SYNPAREIA_NETWORK_URL` or
+  `SYNPAREIA_MOLTRUST_API_KEY` are set, `attested_reputation` queries those
+  services. Otherwise, no network calls.
+- **Witness service** — if `SYNPAREIA_WITNESS_URL` is set, the `witness_*`
+  tools talk to that service to obtain timestamp seals. The witness only sees
+  hashes and signatures, never your content. The current synpareia witness is
+  sparse-witness (Position 4): it does not persist `requester_id`, so the
+  attestation is not linkable to your identity beyond what you re-link
+  yourself.
+
+Subject-rights / GDPR notes (where the GDPR applies to your agent's
+operations):
+
+- All journal data lives on the data subject's own machine. Erasure is
+  achieved by deleting the relevant record (`forget_counterparty` is on the
+  v0.5 roadmap; today, edit `counterparties.json` directly).
+- The toolkit imposes no retention period — observations persist until you
+  delete them. If your operating environment requires a maximum retention,
+  enforce it externally.
+- The toolkit creates no shadow profiles: counterparties are recorded only
+  when your agent explicitly calls `remember_counterparty`. There is no
+  ambient observation.
+
+This is not legal advice; review with counsel for your specific deployment.
 
 ## Built on
 

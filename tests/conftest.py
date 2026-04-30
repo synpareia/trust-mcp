@@ -12,6 +12,7 @@ import synpareia
 from synpareia_trust_mcp.app import AppContext
 from synpareia_trust_mcp.config import Config
 from synpareia_trust_mcp.conversations import ConversationManager
+from synpareia_trust_mcp.journal import JournalStore
 from synpareia_trust_mcp.profile import ProfileManager
 
 pytest_plugins = ["tests.stubs.fixtures"]
@@ -54,6 +55,12 @@ def conversation_manager(profile_manager: ProfileManager, config: Config) -> Con
 
 
 @pytest.fixture()
+def journal_store(config: Config) -> JournalStore:
+    """JournalStore ready for use."""
+    return JournalStore(config.data_dir)
+
+
+@pytest.fixture()
 def alice() -> synpareia.Profile:
     """A test profile (Alice)."""
     return synpareia.generate()
@@ -80,6 +87,7 @@ def _make_ctx(app: AppContext) -> Any:
 def app_ctx(
     profile_manager: ProfileManager,
     conversation_manager: ConversationManager,
+    journal_store: JournalStore,
     config: Config,
 ):
     """Direct-invocation harness for MCP tools.
@@ -91,6 +99,7 @@ def app_ctx(
         config=config,
         profile_manager=profile_manager,
         conversation_manager=conversation_manager,
+        journal_store=journal_store,
         witness_client=None,
     )
     return _make_ctx(app), app
@@ -114,10 +123,12 @@ def app_ctx_with_stubs(
     )
     pm.ensure_profile()
     cm = ConversationManager(pm, config_with_stubs.data_dir)
+    js = JournalStore(config_with_stubs.data_dir)
     app = AppContext(
         config=config_with_stubs,
         profile_manager=pm,
         conversation_manager=cm,
+        journal_store=js,
         witness_client=None,
     )
     return _make_ctx(app), app
@@ -127,6 +138,7 @@ def app_ctx_with_stubs(
 def app_ctx_with_witness(
     profile_manager: ProfileManager,
     conversation_manager: ConversationManager,
+    journal_store: JournalStore,
     config: Config,
     witness_client,
 ):
@@ -138,6 +150,7 @@ def app_ctx_with_witness(
         config=config_with_witness,
         profile_manager=profile_manager,
         conversation_manager=conversation_manager,
+        journal_store=journal_store,
         witness_client=witness_client,
     )
     return _make_ctx(app), app

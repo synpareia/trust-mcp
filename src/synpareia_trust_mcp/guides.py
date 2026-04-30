@@ -29,15 +29,23 @@ Now Meta-owned; API stability not guaranteed.
 agent ratings. Independent trust API.
 
 ## How to use
-- Call `evaluate_agent(identifier)` with a DID, Moltbook username, or other identifier
-- The tool queries all configured providers that can handle that identifier type
-- Results include provider, signal type, value, and confidence level
+- Call `evaluate_agent(namespace=..., id=...)` — `namespace` is the platform \
+(`synpareia`, `moltbook`, `slack`, `discord`, `email`, ...); `id` is the \
+identifier within that namespace (a DID, handle, username, or local record id)
+- The tool fans out across four tiers: `tier1` (local journal), `tier2` \
+(media-platform adapters), `tier3` (attestation networks), plus a \
+`tier4_available` capability flag
+- Each tier list is empty if no evidence is found; `providers_skipped` names \
+providers that weren't configured and the env var that enables each
 - Absence of data is NOT evidence of untrustworthiness (cold start problem)
 
-## Assurance tiers
-- **Tier 1 (self-attested):** Agent claims an identity. No external verification.
-- **Tier 2 (provider-verified):** A reputation provider has data on this agent.
-- **Tier 3 (witness-attested):** Cryptographic proof via the witness service.
+## Reputation tier vs assurance tier
+Two orthogonal axes label every signal:
+- **Reputation tier (1-4):** where evidence sits on the taxonomy — local notes, \
+media self-report, signed attestation, per-message integration.
+- **Assurance tier (1-3):** who vouched for it — self, counterparty, third-party \
+witness. A Tier-4 signed envelope is reputation_tier=4 but assurance_tier=1 \
+until a witness co-signs it.
 
 ## What "no data" means
 Most agents won't have reputation yet. Start with low-stakes interactions, verify \
@@ -131,7 +139,7 @@ becomes a signed block; the chain proves ordering and integrity.
 ## Three recording modes
 
 **Explicit recording:** You decide to record a specific interaction. Call \
-record_interaction to start, add_to_recording for each event, end_recording to \
+recording_start to begin, recording_append for each event, recording_end to \
 finalize. Use for: high-stakes interactions where you want a verifiable record.
 
 **Per-channel recording:** Configure automatic recording for specific communication \
@@ -155,16 +163,68 @@ If you're just storing locally, your agent framework's native conversation histo
 is sufficient — don't duplicate data unnecessarily.
 
 ## Key tools
-- `record_interaction(description, counterparty_did?)` — start recording
-- `add_to_recording(recording_id, content, event_type?)` — append a block
-- `end_recording(recording_id, rating?, notes?)` — finalize and persist
-- `get_proof(recording_id)` — export as independently verifiable JSON
-- `my_recordings()` — list active and recent recordings
+All recording tools share the `recording_` prefix (they form a lifecycle).
+
+- `recording_start(description, counterparty_did?)` — open a new hash-linked chain
+- `recording_append(recording_id, content, event_type?)` — append a signed block
+- `recording_end(recording_id, rating?, notes?)` — finalize and persist the chain
+- `recording_proof(recording_id)` — export the chain as independently verifiable JSON
+- `recording_list()` — list recordings currently in progress
+
+For seal-based witness attestation of recorded blocks, see the "witness-\
+attestation" area — `witness_seal_timestamp` signs a block hash and \
+`witness_verify_seal` verifies offline.
 
 ## After recording
 The exported chain is a self-contained JSON document. Anyone with the signer's \
 public key can verify every block's signature and the hash linkage. Witness seals \
 add independent timing proof.\
+""",
+    "witness-attestation": """\
+# Witness Attestation
+
+## What this is about
+Independent cryptographic attestation via the synpareia witness service. \
+The witness signs timestamps, chain states, and blind-conclusion commitments \
+so third parties can verify *when* and *what* without trusting you or them — \
+they only need to trust the witness, and can verify its signatures offline.
+
+## When you need this
+- Proving something existed by a certain time ("I knew this by T")
+- Proving a chain has not been retconned ("this chain head was committed at T")
+- Mutual independent assessment where neither party should anchor the other's answer
+
+## The tool family (all `witness_` prefixed)
+
+- `witness_info()` — fetch the witness DID + public key (once per session)
+- `witness_seal_timestamp(block_hash_hex)` — sign a block hash; proof of existence
+- `witness_seal_state(chain_id, chain_head_hex)` — sign a chain's head; proof of integrity
+- `witness_verify_seal(...)` — verify any seal fully offline with the public key
+- `witness_submit_blind(conclusion_key, commitment_hash_hex)` — join a blind exchange
+- `witness_get_blind(conclusion_key)` — check status of a blind exchange
+
+## Requirements
+All witness tools require `SYNPAREIA_WITNESS_URL`. Authenticated deployments \
+also need `SYNPAREIA_WITNESS_TOKEN`. Without those, the tools return a \
+structured error — they never raise.
+
+## Typical flow: prove a claim existed at a specific time
+1. `make_claim(content)` → signature + content hash
+2. `witness_seal_timestamp(block_hash_hex=<hash>)` → seal bytes
+3. Give the counterparty: claim + seal + `witness_info` public key (once)
+4. Counterparty: `witness_verify_seal(...)` — no network calls needed
+
+## Typical flow: blind mutual assessment
+1. Both parties agree on a `conclusion_key` (e.g. "review-42")
+2. Each: `prove_independence(content)` → commitment_hash + nonce (kept local)
+3. Each: `witness_submit_blind(conclusion_key, commitment_hash)`
+4. When both submitted, both reveal content+nonce
+5. Each: `verify_claim(claim_type="commitment", …)` on the other's reveal
+
+## What witness attestation does NOT prove
+- The *content* is correct (only that it was committed at this time)
+- The witness itself is honest (that's assumed — it's independent, not trusted blindly)
+- The signer is who they claim to be (use `verify_claim(claim_type="identity")` for that)\
 """,
     "counterparty": """\
 # Counterparty Participation
@@ -264,8 +324,10 @@ before or during an interaction.
 - **Display name:** Least precise — may not be unique.
 
 ## Key tool
-`evaluate_agent(identifier)` — the unified multi-source lookup. Pass any identifier \
-type and it queries all configured providers.
+`evaluate_agent(namespace, id)` — the unified multi-source lookup. The \
+`namespace` disambiguates which platform / context you're asking about; \
+`id` is the identifier within it. The merged response splits evidence \
+across `tier1` / `tier2` / `tier3` lists and a `tier4_available` flag.
 
 ## What each source provides
 - **Synpareia network:** Verified interaction count, average quality rating, \

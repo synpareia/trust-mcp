@@ -1129,14 +1129,10 @@ wheels = [
 
 [[package]]
 name = "synpareia"
-version = "0.2.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.3.0"
+source = { editable = "../sdk" }
 dependencies = [
     { name = "cryptography" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ff/53/c4d5245e2f8892d937984ead27cd39b95350118e77548382c7bd7d9345b2/synpareia-0.2.0.tar.gz", hash = "sha256:19386de873b11164c18468967f93329a17fef5f877321a18f5b39e3a606f1d17", size = 100018, upload-time = "2026-04-14T05:17:37.927Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/00/72/cb8b618f99633c5dffe4e5451ea14b229cb93e931208c39277c9dad684cb/synpareia-0.2.0-py3-none-any.whl", hash = "sha256:a125c43807ac0825b98d6d4fa4bf3944ae2d81633a85f2ff3fdb753c4eee34e3", size = 29650, upload-time = "2026-04-14T05:17:36.501Z" },
 ]
 
 [package.optional-dependencies]
@@ -1144,9 +1140,27 @@ witness = [
     { name = "httpx" },
 ]
 
+[package.metadata]
+requires-dist = [
+    { name = "aiosqlite", marker = "extra == 'dev'", specifier = ">=0.20" },
+    { name = "aiosqlite", marker = "extra == 'sqlite'", specifier = ">=0.20" },
+    { name = "cryptography", specifier = ">=42.0" },
+    { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.115" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "httpx", marker = "extra == 'witness'", specifier = ">=0.27" },
+    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
+    { name = "sqlalchemy", marker = "extra == 'dev'", specifier = ">=2.0" },
+]
+provides-extras = ["sqlite", "witness", "dev"]
+
 [[package]]
 name = "synpareia-trust-mcp"
-version = "0.2.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
@@ -1172,7 +1186,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
-    { name = "synpareia", extras = ["witness"], specifier = ">=0.2.0" },
+    { name = "synpareia", extras = ["witness"], editable = "../sdk" },
 ]
 provides-extras = ["dev"]
 

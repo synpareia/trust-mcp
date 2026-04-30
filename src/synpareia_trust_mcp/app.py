@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 
 from synpareia_trust_mcp.config import Config
 from synpareia_trust_mcp.conversations import ConversationManager
+from synpareia_trust_mcp.journal import JournalStore
 from synpareia_trust_mcp.profile import ProfileManager
 
 try:
@@ -28,6 +29,7 @@ class AppContext:
     config: Config
     profile_manager: ProfileManager
     conversation_manager: ConversationManager
+    journal_store: JournalStore
     witness_client: WitnessClient | None = None
 
 
@@ -37,6 +39,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     config = Config.load()
     profile_manager = ProfileManager(config.data_dir, private_key_b64=config.private_key_b64)
     conversation_manager = ConversationManager(profile_manager, config.data_dir)
+    journal_store = JournalStore(config.data_dir)
 
     # Generate or load the agent's identity (first run creates a new keypair)
     profile_manager.ensure_profile()
@@ -49,6 +52,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
             config=config,
             profile_manager=profile_manager,
             conversation_manager=conversation_manager,
+            journal_store=journal_store,
             witness_client=witness_client,
         )
     finally:

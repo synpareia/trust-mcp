@@ -90,7 +90,7 @@ class ConversationManager:
         conversation_id = f"conv_{uuid.uuid4().hex[:12]}"
         chain = synpareia.create_chain(
             self._pm.profile,
-            chain_type=synpareia.ChainType.SPHERE,
+            policy=synpareia.templates.cop(self._pm.profile),
         )
 
         start_block = synpareia.create_block(

@@ -22,17 +22,17 @@ from synpareia_trust_mcp.tools.commitment import prove_independence
 from synpareia_trust_mcp.tools.identity import make_claim, verify_claim
 from synpareia_trust_mcp.tools.orient import learn, orient
 from synpareia_trust_mcp.tools.recording import (
-    add_to_recording,
-    end_recording,
-    get_proof,
-    my_recordings,
-    record_interaction,
+    recording_append,
+    recording_end,
+    recording_list,
+    recording_proof,
+    recording_start,
 )
 from synpareia_trust_mcp.tools.trust import evaluate_agent
 from synpareia_trust_mcp.tools.witness import (
-    get_witness_info,
-    request_state_seal,
-    request_timestamp_seal,
+    witness_info,
+    witness_seal_state,
+    witness_seal_timestamp,
 )
 
 
@@ -86,7 +86,7 @@ class TestOrientWithZeroConfig:
         ctx, _ = app_ctx
         result = orient(ctx=ctx)
         areas = [a["area"] for a in result["areas_of_concern"]]
-        assert len(areas) >= 9
+        assert len(areas) >= 10
 
     def test_learn_works_offline(self, app_ctx) -> None:
         """learn() is pure-local — doesn't depend on any service."""
@@ -121,20 +121,20 @@ class TestOfflineToolsWork:
 
     def test_recording_lifecycle(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        start = record_interaction(description="offline", ctx=ctx)
+        start = recording_start(description="offline", ctx=ctx)
         rid = start["recording_id"]
-        add_to_recording(recording_id=rid, content="m1", ctx=ctx)
-        listing = my_recordings(ctx=ctx)
+        recording_append(recording_id=rid, content="m1", ctx=ctx)
+        listing = recording_list(ctx=ctx)
         assert listing["active_count"] >= 1
 
-        end_recording(recording_id=rid, ctx=ctx)
-        proof = get_proof(recording_id=rid, ctx=ctx)
+        recording_end(recording_id=rid, ctx=ctx)
+        proof = recording_proof(recording_id=rid, ctx=ctx)
         assert "error" not in proof
 
     def test_offline_verify_seal_works_without_witness_url(self, app_ctx) -> None:
-        """verify_seal_offline must work even without a witness URL — it
+        """witness_verify_seal must work even without a witness URL — it
         only needs the SDK primitives."""
-        from synpareia_trust_mcp.tools.witness import verify_seal_offline
+        from synpareia_trust_mcp.tools.witness import witness_verify_seal
 
         ctx, _ = app_ctx
         witness_profile = synpareia.generate()
@@ -146,7 +146,7 @@ class TestOfflineToolsWork:
             target_block_hash=block.content_hash,
         )
 
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type=str(seal.seal_type),
             witness_id=seal.witness_id,
             witness_signature_b64=base64.b64encode(seal.witness_signature).decode(),
@@ -178,21 +178,21 @@ class TestOnlineToolsDegradeGracefully:
         # and mention the offline fallback
         assert "verify_claim" in summary
 
-    def test_get_witness_info_hints_at_env_var(self, app_ctx) -> None:
+    def test_witness_info_hints_at_env_var(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(get_witness_info(ctx=ctx))
+        result = _run(witness_info(ctx=ctx))
         assert "error" in result
         assert "SYNPAREIA_WITNESS_URL" in result["error"]
 
-    def test_request_timestamp_seal_hints_at_env_var(self, app_ctx) -> None:
+    def test_witness_seal_timestamp_hints_at_env_var(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(request_timestamp_seal(block_hash_hex="ab" * 32, ctx=ctx))
+        result = _run(witness_seal_timestamp(block_hash_hex="ab" * 32, ctx=ctx))
         assert "error" in result
         assert "SYNPAREIA_WITNESS_URL" in result["error"]
 
-    def test_request_state_seal_hints_at_env_var(self, app_ctx) -> None:
+    def test_witness_seal_state_hints_at_env_var(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(request_state_seal(chain_id="c", chain_head_hex="ab" * 32, ctx=ctx))
+        result = _run(witness_seal_state(chain_id="c", chain_head_hex="ab" * 32, ctx=ctx))
         assert "error" in result
         assert "SYNPAREIA_WITNESS_URL" in result["error"]
 
@@ -210,12 +210,12 @@ class TestNoNullReturns:
             make_claim(content="x", ctx=ctx),
             verify_claim(claim_type="signature", ctx=ctx),
             prove_independence(content="x", ctx=ctx),
-            record_interaction(description="x", ctx=ctx),
-            my_recordings(ctx=ctx),
+            recording_start(description="x", ctx=ctx),
+            recording_list(ctx=ctx),
             orient(ctx=ctx),
             learn(area="verification"),
             _run(evaluate_agent(identifier="x", ctx=ctx)),
-            _run(get_witness_info(ctx=ctx)),
+            _run(witness_info(ctx=ctx)),
         ]
         for r in calls:
             assert r is not None

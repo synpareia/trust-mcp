@@ -10,10 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from synpareia_trust_mcp.tools.recording import (
-    add_to_recording,
-    end_recording,
-    get_proof,
-    record_interaction,
+    recording_append,
+    recording_end,
+    recording_proof,
+    recording_start,
 )
 
 TRAVERSAL_IDS = [
@@ -36,9 +36,9 @@ class TestPathTraversal:
 
         for bad_id in TRAVERSAL_IDS:
             for op in (
-                lambda rid: add_to_recording(recording_id=rid, content="x", ctx=ctx),
-                lambda rid: end_recording(recording_id=rid, ctx=ctx),
-                lambda rid: get_proof(recording_id=rid, ctx=ctx),
+                lambda rid: recording_append(recording_id=rid, content="x", ctx=ctx),
+                lambda rid: recording_end(recording_id=rid, ctx=ctx),
+                lambda rid: recording_proof(recording_id=rid, ctx=ctx),
             ):
                 result = op(bad_id)
                 # Must be a dict with error — never raise, never crash
@@ -68,7 +68,7 @@ class TestPathTraversal:
 
         # Attempt several traversals
         for bad_id in TRAVERSAL_IDS:
-            add_to_recording(recording_id=bad_id, content="x", ctx=ctx)
+            recording_append(recording_id=bad_id, content="x", ctx=ctx)
 
         # Enumerate only items directly under data_dir; none of the
         # traversal targets should have been created
@@ -90,12 +90,12 @@ class TestIdOpaqueness:
         ctx, _ = app_ctx
 
         # Start and end a real recording, then try to get its proof
-        start = record_interaction(description="real", ctx=ctx)
-        end_recording(recording_id=start["recording_id"], ctx=ctx)
+        start = recording_start(description="real", ctx=ctx)
+        recording_end(recording_id=start["recording_id"], ctx=ctx)
 
-        real_proof = get_proof(recording_id=start["recording_id"], ctx=ctx)
-        fake_proof = get_proof(recording_id="00000000-0000-0000-0000-000000000000", ctx=ctx)
-        garbage_proof = get_proof(recording_id="not-a-uuid-at-all", ctx=ctx)
+        real_proof = recording_proof(recording_id=start["recording_id"], ctx=ctx)
+        fake_proof = recording_proof(recording_id="00000000-0000-0000-0000-000000000000", ctx=ctx)
+        garbage_proof = recording_proof(recording_id="not-a-uuid-at-all", ctx=ctx)
 
         # Real succeeds; fake + garbage fail — same error shape
         assert "error" not in real_proof
@@ -119,8 +119,8 @@ class TestNoPathLeakInResources:
         ctx, app = app_ctx
 
         # Produce at least one persisted recording
-        start = record_interaction(description="finished", ctx=ctx)
-        end_recording(recording_id=start["recording_id"], ctx=ctx)
+        start = recording_start(description="finished", ctx=ctx)
+        recording_end(recording_id=start["recording_id"], ctx=ctx)
 
         raw = recordings_resource(ctx=ctx)
         payload = json.loads(raw)

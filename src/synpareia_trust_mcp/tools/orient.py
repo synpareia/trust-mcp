@@ -35,6 +35,12 @@ AREAS_OF_CONCERN = [
         "when": "Entering an interaction you might need to prove later.",
     },
     {
+        "area": "witness-attestation",
+        "name": "Witness Attestation",
+        "brief": "Timestamp seals, state seals, and blind conclusions via the independent witness service.",
+        "when": "Proving when something existed, proving chain integrity, or mutual independent assessment.",
+    },
+    {
         "area": "counterparty",
         "name": "Counterparty Participation",
         "brief": "Get the other party involved in trust operations that require cooperation.",
@@ -160,7 +166,7 @@ def orient(ctx: Context) -> dict[str, Any]:
 
 @mcp.tool()
 def learn(area: str) -> dict[str, Any]:
-    """Load a detailed guide for a specific area of concern. Areas: trust-networks, verification, claims, recording, counterparty, reasoning, looking-up, setup, identity-lifecycle."""
+    """Load a detailed guide for a specific area of concern. Areas: trust-networks, verification, claims, recording, witness-attestation, counterparty, reasoning, looking-up, setup, identity-lifecycle."""
     guide = AREA_GUIDES.get(area)
     if guide is None:
         available = sorted(AREA_GUIDES.keys())
@@ -195,6 +201,7 @@ def _get_next_steps(config: Any, active_conversations: list) -> list[str]:
         )
     if not steps:
         steps.append(
-            "Fully configured. Use evaluate_agent to assess counterparties, or make_claim to create verifiable statements."
+            "Fully configured. Use evaluate_agent(namespace, id) to assess counterparties "
+            "across all four tiers, or make_claim to create verifiable statements."
         )
     return steps

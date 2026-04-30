@@ -1,21 +1,42 @@
-"""Witness tools -- independent attestation via the synpareia witness service."""
+"""Witness tools — independent attestation via the synpareia witness service.
+
+All tool names in this module share the `witness_` prefix because they
+are all calls against the same external service. `witness_info` is a
+read-side peek at the witness identity; the four `witness_seal_*` and
+`witness_*_blind` tools each exchange data with the service.
+
+All tools require `SYNPAREIA_WITNESS_URL` (and, for authenticated
+deployments, `SYNPAREIA_WITNESS_TOKEN`). With witness unconfigured
+these tools return a structured error rather than raising.
+"""
 
 from __future__ import annotations
 
 import base64
 import re
+from typing import TYPE_CHECKING
 
 from mcp.server.fastmcp import Context
 from mcp.server.session import ServerSession
 
 from synpareia_trust_mcp.app import AppContext, mcp
 
+if TYPE_CHECKING:
+    from synpareia import Profile
+    from synpareia.witness import WitnessClient
+
 _DID_PATTERN = re.compile(r"^did:synpareia:[0-9a-f]{64}$")
 _VERSION_PATTERN = re.compile(r"^[A-Za-z0-9.\-+]{1,32}$")
 
 
-def _require_witness(app: AppContext) -> None:
-    """Raise if witness is not configured."""
+def _require_witness(app: AppContext) -> WitnessClient:
+    """Return the configured witness client, or raise if not configured.
+
+    Returning the narrowed value (rather than asserting after the call)
+    means callers don't need `assert app.witness_client is not None`
+    afterwards — close-read 2026-04-30 flagged 6 such asserts as LOW
+    defence-in-depth concerns (asserts vanish under `python -O`).
+    """
     if app.witness_client is None:
         msg = (
             "Witness service not configured. Set SYNPAREIA_WITNESS_URL "
@@ -23,6 +44,16 @@ def _require_witness(app: AppContext) -> None:
             "Install with: pip install synpareia-trust-mcp[network]"
         )
         raise ValueError(msg)
+    return app.witness_client
+
+
+def _require_profile(app: AppContext) -> Profile:
+    """Return the loaded profile, or raise if not loaded."""
+    profile = app.profile_manager.profile
+    if profile is None:
+        msg = "Profile not loaded — call orient first."
+        raise ValueError(msg)
+    return profile
 
 
 def _safe_witness_id(val: object) -> str:
@@ -45,20 +76,21 @@ def _safe_witness_version(val: object) -> str:
 
 
 @mcp.tool()
-async def get_witness_info(ctx: Context[ServerSession, AppContext]) -> dict:
-    """Get the witness service's identity — its DID and public key.
+async def witness_info(ctx: Context[ServerSession, AppContext]) -> dict:
+    """Fetch the witness service's identity and public key.
 
-    The witness is an independent third party that provides cryptographic
-    attestations. Use this to retrieve its public key for offline verification
-    of seals it has issued.
+    The witness is an independent third party that signs attestations
+    (timestamp seals, state seals, blind conclusions). Retrieve its
+    public key here once, then use it with `witness_verify_seal` to
+    verify any seal it issues — fully offline, no further calls needed.
 
-    Requires SYNPAREIA_WITNESS_URL to be configured.
+    Returns `witness_id` (a `did:synpareia:*` DID), `public_key_b64`,
+    `public_key_hex`, and `version`. Requires `SYNPAREIA_WITNESS_URL`.
     """
     app = ctx.request_context.lifespan_context
     try:
-        _require_witness(app)
-        assert app.witness_client is not None
-        info = await app.witness_client.get_witness_info()
+        client = _require_witness(app)
+        info = await client.get_witness_info()
         return {
             "witness_id": _safe_witness_id(info.witness_id),
             "public_key_b64": info.public_key_b64,
@@ -70,27 +102,26 @@ async def get_witness_info(ctx: Context[ServerSession, AppContext]) -> dict:
 
 
 @mcp.tool()
-async def request_timestamp_seal(
+async def witness_seal_timestamp(
     block_hash_hex: str,
     ctx: Context[ServerSession, AppContext],
 ) -> dict:
-    """Request the witness to timestamp a block, proving it existed at this moment.
+    """Ask the witness to timestamp a block — proof it existed at this moment.
 
-    Provide the block's content_hash as a hex string. The witness signs the hash
-    with its private key and returns a seal you can verify offline later.
+    Pass the block's content hash (hex). The witness signs the hash with
+    its private key and returns a `SealPayload` you can verify offline
+    later with `witness_verify_seal`.
 
-    The seal is cryptographic proof that this block existed at the witnessed time,
-    signed by an independent third party.
+    Use this to create evidence that a decision, claim, or observation
+    predates some later event — a cryptographic "I knew this by T"
+    signed by an independent third party, not by you.
     """
     app = ctx.request_context.lifespan_context
     try:
-        _require_witness(app)
-        assert app.witness_client is not None
-        profile = app.profile_manager.profile
-        assert profile is not None
+        client = _require_witness(app)
 
         block_hash = bytes.fromhex(block_hash_hex)
-        seal = await app.witness_client.timestamp_seal(profile.id, block_hash)
+        seal = await client.timestamp_seal(block_hash)
         return {
             "seal_type": str(seal.seal_type),
             "witness_id": _safe_witness_id(seal.witness_id),
@@ -103,26 +134,27 @@ async def request_timestamp_seal(
 
 
 @mcp.tool()
-async def request_state_seal(
+async def witness_seal_state(
     chain_id: str,
     chain_head_hex: str,
     ctx: Context[ServerSession, AppContext],
 ) -> dict:
     """Checkpoint a chain's current state with the witness.
 
-    The witness signs the chain ID and head hash together, creating a
-    cryptographic proof that the chain was in this exact state at the
-    witnessed time. Useful for proving chain integrity at a point in time.
+    Pass the chain id and its current head hash (hex). The witness signs
+    the pair together, creating proof that the chain was in this exact
+    state at the witnessed time.
+
+    Useful for proving that a chain has not been retconned: if anyone
+    later claims "your chain never contained X", a state seal whose head
+    commits to the block containing X refutes them.
     """
     app = ctx.request_context.lifespan_context
     try:
-        _require_witness(app)
-        assert app.witness_client is not None
-        profile = app.profile_manager.profile
-        assert profile is not None
+        client = _require_witness(app)
 
         chain_head = bytes.fromhex(chain_head_hex)
-        seal = await app.witness_client.state_seal(profile.id, chain_id, chain_head)
+        seal = await client.state_seal(chain_id, chain_head)
         return {
             "seal_type": str(seal.seal_type),
             "witness_id": _safe_witness_id(seal.witness_id),
@@ -136,7 +168,7 @@ async def request_state_seal(
 
 
 @mcp.tool()
-def verify_seal_offline(
+def witness_verify_seal(
     seal_type: str,
     witness_id: str,
     witness_signature_b64: str,
@@ -147,13 +179,18 @@ def verify_seal_offline(
     target_chain_id: str | None = None,
     target_chain_head_hex: str | None = None,
 ) -> dict:
-    """Verify a witness seal without contacting the witness service. Works fully offline.
+    """Verify a witness seal offline — no calls to the witness service.
 
-    Provide the seal fields and the witness's public key (from get_witness_info).
-    This reconstructs the signing envelope and verifies the Ed25519 signature.
+    Provide the seal fields (from `witness_seal_timestamp` or
+    `witness_seal_state`) and the witness's public key (from
+    `witness_info`, cached once). This reconstructs the signing envelope
+    and checks the Ed25519 signature.
 
-    For timestamp seals: provide target_block_hash_hex.
-    For state seals: provide target_chain_id and target_chain_head_hex.
+    For timestamp seals: pass `target_block_hash_hex`.
+    For state seals: pass `target_chain_id` and `target_chain_head_hex`.
+
+    Returns `valid: True/False`. This is the terminal verification step —
+    anyone with the seal + the witness public key can run it independently.
     """
     from datetime import datetime
 
@@ -195,34 +232,35 @@ def verify_seal_offline(
 
 
 @mcp.tool()
-async def submit_blind_conclusion(
+async def witness_submit_blind(
     conclusion_key: str,
     commitment_hash_hex: str,
     ctx: Context[ServerSession, AppContext],
 ) -> dict:
-    """Submit your commitment to a blind conclusion via the witness.
+    """Submit your committed assessment to a blind conclusion exchange.
 
-    A blind conclusion lets two parties independently commit to assessments
-    before seeing each other's. The witness coordinates the exchange:
+    A "blind conclusion" lets two parties independently commit to
+    assessments (reviews, votes, estimates) before seeing each other's —
+    evidence that neither party's answer was anchored by the other's.
 
-    1. Both parties seal their assessment locally (seal_commitment)
-    2. Both submit the commitment hash here with the same conclusion_key
-    3. When both have submitted, the witness reveals both commitment hashes
-    4. Each party can then reveal and verify the other's commitment
+    Flow:
+    1. Both parties seal their assessment locally (`prove_independence`)
+    2. Both call this tool with the same `conclusion_key` and their
+       commitment hashes
+    3. Once both have submitted, both commitments are revealed together
+    4. Each party reveals their original content+nonce to prove their
+       answer matches the hash they committed to
 
-    The conclusion_key is a shared identifier both parties agree on beforehand.
+    `conclusion_key` is a shared identifier both parties agree on first
+    (e.g., "dispute-42", a URL, or a hash of the question).
     """
     app = ctx.request_context.lifespan_context
     try:
-        _require_witness(app)
-        assert app.witness_client is not None
-        profile = app.profile_manager.profile
-        assert profile is not None
+        client = _require_witness(app)
+        profile = _require_profile(app)
 
         commitment_hash = bytes.fromhex(commitment_hash_hex)
-        status = await app.witness_client.submit_conclusion(
-            conclusion_key, profile.id, commitment_hash
-        )
+        status = await client.submit_conclusion(conclusion_key, profile.id, commitment_hash)
         result: dict = {
             "conclusion_key": status.conclusion_key,
             "status": status.status,
@@ -243,19 +281,20 @@ async def submit_blind_conclusion(
 
 
 @mcp.tool()
-async def get_blind_conclusion(
+async def witness_get_blind(
     conclusion_key: str,
     ctx: Context[ServerSession, AppContext],
 ) -> dict:
-    """Check the status of a blind conclusion.
+    """Check the status of a blind conclusion exchange.
 
-    Returns whether both parties have submitted, and if so, their commitment hashes.
+    Pair to `witness_submit_blind`. Returns whether both parties have
+    submitted their commitments, and — once both have — the pair of
+    commitment hashes so each party can verify the other's reveal.
     """
     app = ctx.request_context.lifespan_context
     try:
-        _require_witness(app)
-        assert app.witness_client is not None
-        status = await app.witness_client.get_conclusion(conclusion_key)
+        client = _require_witness(app)
+        status = await client.get_conclusion(conclusion_key)
         result: dict = {
             "conclusion_key": status.conclusion_key,
             "status": status.status,

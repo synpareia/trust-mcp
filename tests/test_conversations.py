@@ -78,7 +78,7 @@ class TestConversationLifecycle:
         export = conversation_manager.export(conv.conversation_id)
 
         assert "positions" in export
-        assert len(export["positions"]) == 2  # start + message
+        assert len(export["positions"]) == 3  # policy genesis + start + message
 
     def test_list_active(self, conversation_manager: ConversationManager) -> None:
         conv1 = conversation_manager.start("Conv 1")
@@ -156,5 +156,8 @@ class TestConversationVerification:
         conversation_manager.add_message(conv.conversation_id, "Message 2")
 
         export = conversation_manager.export(conv.conversation_id)
-        valid, errors = synpareia.verify_export(export)
+        profile = conversation_manager._pm.profile
+        valid, errors = synpareia.verify_export(
+            export, public_keys={profile.id: profile.public_key}
+        )
         assert valid, f"Chain should verify: {errors}"

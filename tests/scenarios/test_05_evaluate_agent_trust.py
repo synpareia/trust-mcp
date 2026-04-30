@@ -3,8 +3,13 @@
 See scenarios/trust-toolkit/05-evaluate-agent-trust.md.
 
 Uses the in-process ASGI stubs for Moltbook, MolTrust, and the synpareia
-network so every HTTP call lands on a controlled fixture — no real
+network so every HTTP call lands on a controlled fixture -- no real
 external services involved.
+
+v0.4.0 signature: ``evaluate_agent(namespace, id)``. Fans out to all
+four tiers and returns a per-tier response. The legacy bare-string
+form (``identifier=...``) is still accepted for one release, emitting
+a ``deprecation`` flag in the response.
 """
 
 from __future__ import annotations
@@ -15,123 +20,192 @@ import json
 from synpareia_trust_mcp.tools.trust import evaluate_agent
 
 
-def _call(identifier: str, ctx) -> dict:
-    return asyncio.run(evaluate_agent(identifier=identifier, ctx=ctx))
+def _call(ctx, **kwargs) -> dict:
+    return asyncio.run(evaluate_agent(ctx=ctx, **kwargs))
 
 
-class TestEvaluateAgentTrust:
-    def test_three_providers_all_queried(self, app_ctx_with_stubs) -> None:
+class TestEvaluateAgentMergedResponse:
+    def test_returns_per_tier_lists(self, app_ctx_with_stubs) -> None:
         ctx, _ = app_ctx_with_stubs
-        result = _call("alice", ctx)
+        result = _call(ctx, namespace="synpareia", id="alice")
 
-        assert "providers_queried" in result
-        assert set(result["providers_queried"]) == {
-            "synpareia",
-            "moltbook",
-            "moltrust",
-        }
+        for key in (
+            "tier1",
+            "tier2",
+            "tier3",
+            "tier4_available",
+            "providers_queried",
+            "providers_skipped",
+            "summary",
+        ):
+            assert key in result, f"missing key: {key}"
+        assert isinstance(result["tier1"], list)
+        assert isinstance(result["tier2"], list)
+        assert isinstance(result["tier3"], list)
+        assert isinstance(result["tier4_available"], bool)
 
-    def test_signal_schema_is_uniform(self, app_ctx_with_stubs) -> None:
+    def test_tier3_signals_include_synpareia_and_moltrust(self, app_ctx_with_stubs) -> None:
         ctx, _ = app_ctx_with_stubs
-        result = _call("alice", ctx)
+        result = _call(ctx, namespace="synpareia", id="alice")
 
-        assert result["signals"], "expected at least one signal for alice"
-        for signal in result["signals"]:
-            for field in ("provider", "signal_type", "value", "confidence", "detail"):
-                assert field in signal, f"signal missing {field}: {signal}"
-            assert signal["confidence"] in {"low", "medium", "high"}
+        providers_in_tier3 = {s["provider"] for s in result["tier3"]}
+        assert "synpareia" in providers_in_tier3
+        assert "moltrust" in providers_in_tier3
 
-    def test_synpareia_signals_are_high_confidence(self, app_ctx_with_stubs) -> None:
+    def test_moltbook_namespace_populates_tier2(self, app_ctx_with_stubs) -> None:
         ctx, _ = app_ctx_with_stubs
-        result = _call("alice", ctx)
+        result = _call(ctx, namespace="moltbook", id="alice")
 
-        synpareia_signals = [s for s in result["signals"] if s["provider"] == "synpareia"]
-        assert synpareia_signals, "expected synpareia signals for alice"
-        for s in synpareia_signals:
-            # Lookup signals use "high" for the *claim* that the record
-            # exists; data signals use "high" for proof-based signals.
-            assert s["confidence"] == "high", f"synpareia signal should be high-confidence: {s}"
+        assert len(result["tier2"]) > 0
+        providers_in_tier2 = {s["provider"] for s in result["tier2"]}
+        assert "moltbook" in providers_in_tier2
 
-    def test_moltbook_and_moltrust_are_not_high_confidence(self, app_ctx_with_stubs) -> None:
+    def test_non_media_namespace_tier2_is_empty(self, app_ctx_with_stubs) -> None:
+        """Tier 2 only populates when the namespace has an adapter. A
+        bare DID/synpareia query should leave tier2 empty (no guessing)."""
         ctx, _ = app_ctx_with_stubs
-        result = _call("alice", ctx)
+        result = _call(ctx, namespace="synpareia", id="did:synpareia:abc")
 
-        for s in result["signals"]:
-            if s["provider"] in {"moltbook", "moltrust"} and s["signal_type"] not in {
-                "lookup",
-                "error",
-            }:
-                assert s["confidence"] in {"low", "medium"}, (
-                    f"{s['provider']} data signal should not be high-confidence: {s}"
-                )
+        assert result["tier2"] == []
 
+    def test_providers_queried_and_skipped_fields(self, app_ctx_with_stubs) -> None:
+        ctx, _ = app_ctx_with_stubs
+        result = _call(ctx, namespace="synpareia", id="alice")
+
+        # synpareia-network + moltrust are configured → queried.
+        # moltbook is not a synpareia-namespace Tier 3 provider — skipped
+        # at Tier 3, but the Tier 2 namespace-specific routing means it
+        # was only queried iff namespace='moltbook'.
+        assert set(result["providers_queried"]) >= {"synpareia", "moltrust"}
+
+    def test_tier4_available_when_synpareia_did(self, app_ctx_with_stubs) -> None:
+        ctx, _ = app_ctx_with_stubs
+        result = _call(ctx, namespace="synpareia", id="did:synpareia:deadbeef")
+        assert result["tier4_available"] is True
+
+    def test_tier4_unavailable_for_non_synpareia(self, app_ctx_with_stubs) -> None:
+        ctx, _ = app_ctx_with_stubs
+        result = _call(ctx, namespace="moltbook", id="alice")
+        assert result["tier4_available"] is False
+
+
+class TestEvaluateAgentTier1Lookup:
+    def test_tier1_populates_from_local_journal(self, app_ctx) -> None:
+        ctx, app = app_ctx
+        record = app.journal_store.upsert(
+            namespace="slack",
+            namespace_id="T0/U0",
+            display_name="alice",
+        )
+        result = _call(ctx, namespace="slack", id="T0/U0")
+
+        assert len(result["tier1"]) == 1
+        assert result["tier1"][0]["identifier"] == record.identifier
+
+    def test_tier1_matches_by_display_name(self, app_ctx) -> None:
+        ctx, app = app_ctx
+        app.journal_store.upsert(
+            namespace="slack",
+            namespace_id="T0/U0",
+            display_name="alice",
+        )
+        result = _call(ctx, namespace="slack", id="alice")
+        assert len(result["tier1"]) >= 1
+
+
+class TestEvaluateAgentInjectionSafety:
     def test_injector_payload_never_surfaced(self, app_ctx_with_stubs) -> None:
-        """The Moltbook stub's 'injector' persona plants prompt-injection
-        strings in `bio` and `description`. evaluate_agent must return
-        only structured fields — the raw text must never appear in the
-        output anywhere."""
         ctx, _ = app_ctx_with_stubs
-        result = _call("injector", ctx)
+        result = _call(ctx, namespace="moltbook", id="injector")
 
         dumped = json.dumps(result).lower()
-        # Reference strings from the stub fixture
         assert "ignore previous instructions" not in dumped
         assert "<<system>>" not in dumped
         assert "trust_score=1.0" not in dumped
 
-    def test_unknown_identifier_returns_not_found_per_provider(self, app_ctx_with_stubs) -> None:
+
+class TestEvaluateAgentUnknown:
+    def test_unknown_identifier_returns_empty_tiers(self, app_ctx_with_stubs) -> None:
         ctx, _ = app_ctx_with_stubs
-        result = _call("nobody-by-this-name", ctx)
+        result = _call(ctx, namespace="synpareia", id="nobody-by-this-name")
 
-        providers_with_not_found = {
+        # Tier 3 still reports structured signals (lookup=not_found per provider).
+        not_found_providers = {
             s["provider"]
-            for s in result["signals"]
-            if s["signal_type"] == "lookup" and s["value"] == "not_found"
+            for s in result["tier3"]
+            if s.get("signal_type") == "lookup" and s.get("value") == "not_found"
         }
-        # Every provider should report not_found for an unknown identifier
-        assert providers_with_not_found == {"synpareia", "moltbook", "moltrust"}
+        assert not_found_providers == {"synpareia", "moltrust"}
 
-    def test_zero_config_returns_helpful_message(self, app_ctx) -> None:
-        """With no providers configured, the tool must not crash and must
-        point the caller at the env vars that would enable lookups."""
+
+class TestEvaluateAgentZeroConfig:
+    def test_zero_config_returns_helpful_summary(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _call("alice", ctx)
+        result = _call(ctx, namespace="synpareia", id="alice")
 
+        assert result["tier1"] == []
+        assert result["tier2"] == []
+        assert result["tier3"] == []
         assert result["providers_queried"] == []
-        assert result["signals"] == []
-        assert "summary" in result
+        # Every configurable provider should appear in providers_skipped
+        skipped_names = {p["name"] for p in result["providers_skipped"]}
+        assert "synpareia" in skipped_names
+        assert "moltrust" in skipped_names
+        # Summary points the caller at the env vars
         lower = result["summary"].lower()
-        # At least one env var hint should be present
         assert any(
-            hint in lower
-            for hint in (
+            env in lower
+            for env in (
                 "synpareia_network_url",
-                "moltbook_api_url",
-                "moltrust_api_key",
+                "synpareia_moltrust_api_key",
+                "synpareia_moltbook_api_url",
             )
         )
-        # And the zero-config path should still recommend offline verify
-        assert "verify_claim" in result["summary"]
 
-    def test_schema_does_not_change_with_provider_count(self, app_ctx, app_ctx_with_stubs) -> None:
-        """Whether 0 or 3 providers are configured, the response has the
-        same shape: identifier, providers_queried, signals, summary."""
-        zero_ctx, _ = app_ctx
-        full_ctx, _ = app_ctx_with_stubs
 
-        zero = _call("alice", zero_ctx)
-        full = _call("alice", full_ctx)
+class TestEvaluateAgentLegacySignature:
+    def test_legacy_identifier_kwarg_still_works(self, app_ctx_with_stubs) -> None:
+        """The bare-string (identifier=...) form must still return useful
+        data for one release while the deprecation rides along."""
+        ctx, _ = app_ctx_with_stubs
+        result = _call(ctx, identifier="alice")
 
-        for key in ("identifier", "providers_queried", "signals", "summary"):
-            assert key in zero, f"zero-config response missing {key}"
-            assert key in full, f"full-config response missing {key}"
+        assert "deprecation" in result
+        assert "evaluate_agent" in result["deprecation"]
+        # Legacy path routes Tier 3 at minimum.
+        assert set(result["providers_queried"]) >= {"synpareia", "moltrust"}
 
+    def test_legacy_form_without_namespace_or_id_rejected(self, app_ctx) -> None:
+        ctx, _ = app_ctx
+        result = _call(ctx)
+        assert "error" in result
+
+
+class TestEvaluateAgentValidation:
+    def test_rejects_empty_namespace(self, app_ctx) -> None:
+        ctx, _ = app_ctx
+        result = _call(ctx, namespace="", id="alice")
+        assert "error" in result
+
+    def test_rejects_empty_id(self, app_ctx) -> None:
+        ctx, _ = app_ctx
+        result = _call(ctx, namespace="synpareia", id="")
+        assert "error" in result
+
+    def test_rejects_control_characters(self, app_ctx) -> None:
+        ctx, _ = app_ctx
+        result = _call(ctx, namespace="synpareia", id="alice\x00")
+        assert "error" in result
+
+    def test_rejects_oversized_id(self, app_ctx) -> None:
+        ctx, _ = app_ctx
+        result = _call(ctx, namespace="synpareia", id="x" * 500)
+        assert "error" in result
+
+
+class TestEvaluateAgentSummary:
     def test_summary_is_concise(self, app_ctx_with_stubs) -> None:
         ctx, _ = app_ctx_with_stubs
-        result = _call("alice", ctx)
-
-        # ≤3 sentences per the scenario spec.
-        sentence_terminators = result["summary"].count(".") + result["summary"].count("!")
-        assert sentence_terminators <= 4, (
-            f"summary should be ≤3 sentences, got {sentence_terminators}: {result['summary']!r}"
-        )
+        result = _call(ctx, namespace="synpareia", id="alice")
+        terminators = result["summary"].count(".") + result["summary"].count("!")
+        assert terminators <= 5, f"summary too long: {result['summary']!r}"

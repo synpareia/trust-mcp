@@ -21,18 +21,18 @@ import pytest
 from synpareia_trust_mcp.tools.commitment import prove_independence
 from synpareia_trust_mcp.tools.identity import make_claim, verify_claim
 from synpareia_trust_mcp.tools.recording import (
-    add_to_recording,
-    end_recording,
-    get_proof,
-    my_recordings,
-    record_interaction,
+    recording_append,
+    recording_end,
+    recording_list,
+    recording_proof,
+    recording_start,
 )
 from synpareia_trust_mcp.tools.trust import evaluate_agent
 from synpareia_trust_mcp.tools.witness import (
-    get_witness_info,
-    request_state_seal,
-    request_timestamp_seal,
-    verify_seal_offline,
+    witness_info,
+    witness_seal_state,
+    witness_seal_timestamp,
+    witness_verify_seal,
 )
 
 # A 100KB payload — oversized compared to typical inputs
@@ -119,9 +119,9 @@ class TestVerifyClaimErrors:
 
 
 class TestRecordingErrors:
-    def test_add_to_nonexistent(self, app_ctx) -> None:
+    def test_append_to_nonexistent(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = add_to_recording(
+        result = recording_append(
             recording_id=WELL_FORMED_FAKE_UUID,
             content="msg",
             ctx=ctx,
@@ -131,37 +131,37 @@ class TestRecordingErrors:
 
     def test_end_nonexistent(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = end_recording(recording_id=WELL_FORMED_FAKE_UUID, ctx=ctx)
+        result = recording_end(recording_id=WELL_FORMED_FAKE_UUID, ctx=ctx)
         assert "error" in result
         assert _is_safe_error(result)
 
     def test_proof_of_nonexistent(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = get_proof(recording_id="zzz", ctx=ctx)
+        result = recording_proof(recording_id="zzz", ctx=ctx)
         assert "error" in result
         assert _is_safe_error(result)
 
-    def test_record_with_injection_description_does_not_crash(self, app_ctx) -> None:
+    def test_start_with_injection_description_does_not_crash(self, app_ctx) -> None:
         ctx, _ = app_ctx
         # Injection payload in a description must be stored verbatim,
         # never interpreted. A successful record is fine.
-        result = record_interaction(description=INJECTION, ctx=ctx)
+        result = recording_start(description=INJECTION, ctx=ctx)
         assert "recording_id" in result
         assert _is_safe_error(result)
 
-    def test_record_with_oversized_description(self, app_ctx) -> None:
+    def test_start_with_oversized_description(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = record_interaction(description=OVERSIZED, ctx=ctx)
+        result = recording_start(description=OVERSIZED, ctx=ctx)
         # Oversized should either succeed (no explicit limit) or return
         # an error — not crash. Either is structurally fine.
         assert isinstance(result, dict)
         assert _is_safe_error(result)
 
-    def test_add_oversized_content(self, app_ctx) -> None:
+    def test_append_oversized_content(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        start = record_interaction(description="oversize", ctx=ctx)
+        start = recording_start(description="oversize", ctx=ctx)
         rid = start["recording_id"]
-        result = add_to_recording(recording_id=rid, content=OVERSIZED, ctx=ctx)
+        result = recording_append(recording_id=rid, content=OVERSIZED, ctx=ctx)
         assert isinstance(result, dict)
         assert _is_safe_error(result)
 
@@ -169,7 +169,7 @@ class TestRecordingErrors:
 class TestWitnessErrors:
     def test_offline_verify_with_malformed_base64(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type="timestamp",
             witness_id="did:synpareia:fake",
             witness_signature_b64=MALFORMED_B64,
@@ -183,7 +183,7 @@ class TestWitnessErrors:
 
     def test_offline_verify_with_bad_timestamp(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type="timestamp",
             witness_id="did:synpareia:fake",
             witness_signature_b64="AAAA",
@@ -196,7 +196,7 @@ class TestWitnessErrors:
 
     def test_unknown_seal_type(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type="teleportation",
             witness_id="did:synpareia:fake",
             witness_signature_b64="AAAA",
@@ -209,19 +209,19 @@ class TestWitnessErrors:
 
     def test_witness_info_not_configured(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(get_witness_info(ctx=ctx))
+        result = _run(witness_info(ctx=ctx))
         assert "error" in result
         assert _is_safe_error(result)
 
-    def test_timestamp_seal_not_configured(self, app_ctx) -> None:
+    def test_witness_seal_timestamp_not_configured(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(request_timestamp_seal(block_hash_hex="ab" * 32, ctx=ctx))
+        result = _run(witness_seal_timestamp(block_hash_hex="ab" * 32, ctx=ctx))
         assert "error" in result
         assert _is_safe_error(result)
 
-    def test_state_seal_not_configured(self, app_ctx) -> None:
+    def test_witness_seal_state_not_configured(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(request_state_seal(chain_id="fake", chain_head_hex="ab" * 32, ctx=ctx))
+        result = _run(witness_seal_state(chain_id="fake", chain_head_hex="ab" * 32, ctx=ctx))
         assert "error" in result
         assert _is_safe_error(result)
 
@@ -275,13 +275,13 @@ class TestStateStability:
         good = make_claim(content="still works", ctx=ctx)
         assert "signature_b64" in good
 
-    def test_my_recordings_unaffected_by_failed_end(self, app_ctx) -> None:
+    def test_recording_list_unaffected_by_failed_end(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        start = record_interaction(description="stable", ctx=ctx)
+        start = recording_start(description="stable", ctx=ctx)
         # Try to end a *different* (nonexistent) recording
-        end_recording(recording_id=WELL_FORMED_FAKE_UUID, ctx=ctx)
+        recording_end(recording_id=WELL_FORMED_FAKE_UUID, ctx=ctx)
         # The real one should still be listed
-        listing = my_recordings(ctx=ctx)
+        listing = recording_list(ctx=ctx)
         ids = {r["conversation_id"] for r in listing["recordings"]}
         assert start["recording_id"] in ids
 

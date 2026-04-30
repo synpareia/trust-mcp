@@ -32,18 +32,18 @@ from synpareia_trust_mcp.tools.commitment import prove_independence
 from synpareia_trust_mcp.tools.identity import make_claim, verify_claim
 from synpareia_trust_mcp.tools.orient import learn, orient
 from synpareia_trust_mcp.tools.recording import (
-    add_to_recording,
-    end_recording,
-    get_proof,
-    my_recordings,
-    record_interaction,
+    recording_append,
+    recording_end,
+    recording_list,
+    recording_proof,
+    recording_start,
 )
 from synpareia_trust_mcp.tools.trust import evaluate_agent
 from synpareia_trust_mcp.tools.witness import (
-    get_witness_info,
-    request_state_seal,
-    request_timestamp_seal,
-    verify_seal_offline,
+    witness_info,
+    witness_seal_state,
+    witness_seal_timestamp,
+    witness_verify_seal,
 )
 
 # --- Strategies ------------------------------------------------------
@@ -222,9 +222,9 @@ class TestProveIndependenceFuzz:
 class TestRecordingFuzz:
     @FUZZ_SETTINGS
     @given(description=_arbitrary_text(), counterparty=st.one_of(st.none(), _arbitrary_text()))
-    def test_record_interaction_never_crashes(self, app_ctx, description, counterparty) -> None:
+    def test_recording_start_never_crashes(self, app_ctx, description, counterparty) -> None:
         ctx, _ = app_ctx
-        result = record_interaction(
+        result = recording_start(
             description=description,
             counterparty_did=counterparty,
             ctx=ctx,
@@ -233,23 +233,23 @@ class TestRecordingFuzz:
 
     @FUZZ_SETTINGS
     @given(rid=_recording_id_like(), content=_arbitrary_text())
-    def test_add_to_recording_never_crashes(self, app_ctx, rid, content) -> None:
+    def test_recording_append_never_crashes(self, app_ctx, rid, content) -> None:
         ctx, _ = app_ctx
-        result = add_to_recording(recording_id=rid, content=content, ctx=ctx)
+        result = recording_append(recording_id=rid, content=content, ctx=ctx)
         assert _is_safe_result(result)
 
     @FUZZ_SETTINGS
     @given(rid=_recording_id_like())
-    def test_end_recording_never_crashes(self, app_ctx, rid) -> None:
+    def test_recording_end_never_crashes(self, app_ctx, rid) -> None:
         ctx, _ = app_ctx
-        result = end_recording(recording_id=rid, ctx=ctx)
+        result = recording_end(recording_id=rid, ctx=ctx)
         assert _is_safe_result(result)
 
     @FUZZ_SETTINGS
     @given(rid=_recording_id_like())
-    def test_get_proof_never_crashes(self, app_ctx, rid) -> None:
+    def test_recording_proof_never_crashes(self, app_ctx, rid) -> None:
         ctx, _ = app_ctx
-        result = get_proof(recording_id=rid, ctx=ctx)
+        result = recording_proof(recording_id=rid, ctx=ctx)
         assert _is_safe_result(result)
 
 
@@ -292,21 +292,21 @@ class TestWitnessFuzz:
 
     @FUZZ_SETTINGS
     @given(block_hash=_hex_hash_like())
-    def test_timestamp_seal_never_crashes(self, app_ctx, block_hash) -> None:
+    def test_witness_seal_timestamp_never_crashes(self, app_ctx, block_hash) -> None:
         ctx, _ = app_ctx
-        result = _run(request_timestamp_seal(block_hash_hex=block_hash, ctx=ctx))
+        result = _run(witness_seal_timestamp(block_hash_hex=block_hash, ctx=ctx))
         assert _is_safe_result(result)
 
     @FUZZ_SETTINGS
     @given(chain_id=_arbitrary_text(), chain_head=_hex_hash_like())
-    def test_state_seal_never_crashes(self, app_ctx, chain_id, chain_head) -> None:
+    def test_witness_seal_state_never_crashes(self, app_ctx, chain_id, chain_head) -> None:
         ctx, _ = app_ctx
-        result = _run(request_state_seal(chain_id=chain_id, chain_head_hex=chain_head, ctx=ctx))
+        result = _run(witness_seal_state(chain_id=chain_id, chain_head_hex=chain_head, ctx=ctx))
         assert _is_safe_result(result)
 
-    def test_get_witness_info_never_crashes(self, app_ctx) -> None:
+    def test_witness_info_never_crashes(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(get_witness_info(ctx=ctx))
+        result = _run(witness_info(ctx=ctx))
         assert _is_safe_result(result)
 
     @FUZZ_SETTINGS
@@ -318,11 +318,11 @@ class TestWitnessFuzz:
         pk=_b64_like(),
         target_hash=_hex_hash_like(),
     )
-    def test_verify_seal_offline_never_crashes(
+    def test_witness_verify_seal_never_crashes(
         self, app_ctx, seal_type, witness_id, sig, sealed_at, pk, target_hash
     ) -> None:
         ctx, _ = app_ctx
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type=seal_type,
             witness_id=witness_id,
             witness_signature_b64=sig,
@@ -358,10 +358,10 @@ class TestStateStabilityUnderFuzz:
 
     @FUZZ_SETTINGS
     @given(garbage=_recording_id_like())
-    def test_my_recordings_after_bogus_add(self, app_ctx, garbage) -> None:
+    def test_recording_list_after_bogus_append(self, app_ctx, garbage) -> None:
         ctx, _ = app_ctx
-        add_to_recording(recording_id=garbage, content="x", ctx=ctx)
-        listing = my_recordings(ctx=ctx)
+        recording_append(recording_id=garbage, content="x", ctx=ctx)
+        listing = recording_list(ctx=ctx)
         assert isinstance(listing, dict)
         assert "recordings" in listing
 
@@ -379,10 +379,10 @@ class TestStateStabilityUnderFuzz:
         "ab" * 100,  # too long
     ],
 )
-def test_verify_seal_offline_bad_hash_shapes(app_ctx, bad_hash) -> None:
+def test_witness_verify_seal_bad_hash_shapes(app_ctx, bad_hash) -> None:
     """Spot-check common malformed hex that Hypothesis might not hit."""
     ctx, _ = app_ctx
-    result = verify_seal_offline(
+    result = witness_verify_seal(
         seal_type="timestamp",
         witness_id="did:synpareia:fake",
         witness_signature_b64="AAAA",

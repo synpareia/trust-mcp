@@ -40,7 +40,7 @@ def recordings_resource(ctx: Context) -> str:
         files = sorted(conv_dir.glob("conv_*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
         for f in files[:20]:
             # Intentionally drop the filesystem path — callers have the
-            # recording_id and can retrieve contents via get_proof (ADV-017).
+            # recording_id and can retrieve contents via recording_proof (ADV-017).
             recent.append(
                 {
                     "recording_id": f.stem,

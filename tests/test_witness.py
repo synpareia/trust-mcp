@@ -12,6 +12,7 @@ from synpareia.types import SealType
 from synpareia_trust_mcp.app import AppContext, _create_witness_client
 from synpareia_trust_mcp.config import Config
 from synpareia_trust_mcp.conversations import ConversationManager
+from synpareia_trust_mcp.journal import JournalStore
 from synpareia_trust_mcp.profile import ProfileManager
 from synpareia_trust_mcp.tools.witness import (
     _require_witness,
@@ -24,6 +25,7 @@ class TestRequireWitness:
             config=config,
             profile_manager=profile_manager,
             conversation_manager=ConversationManager(profile_manager, config.data_dir),
+            journal_store=JournalStore(config.data_dir),
             witness_client=None,
         )
         import pytest
@@ -41,6 +43,7 @@ class TestRequireWitness:
             config=config,
             profile_manager=profile_manager,
             conversation_manager=ConversationManager(profile_manager, config.data_dir),
+            journal_store=JournalStore(config.data_dir),
             witness_client=FakeClient(),  # type: ignore[arg-type]
         )
         _require_witness(app)  # Should not raise
@@ -174,7 +177,7 @@ def _verify_seal_offline_impl(
     target_chain_id: str | None = None,
     target_chain_head_hex: str | None = None,
 ) -> dict:
-    """Call the verify_seal_offline logic without MCP context."""
+    """Call the witness_verify_seal logic without MCP context."""
     from synpareia.seal import SealPayload
     from synpareia.seal.verify import verify_seal
     from synpareia.types import SealType

@@ -15,10 +15,10 @@ import base64
 import synpareia
 
 from synpareia_trust_mcp.tools.witness import (
-    get_witness_info,
-    request_state_seal,
-    request_timestamp_seal,
-    verify_seal_offline,
+    witness_info,
+    witness_seal_state,
+    witness_seal_timestamp,
+    witness_verify_seal,
 )
 
 
@@ -29,7 +29,7 @@ def _run(coro):
 class TestWitnessInfo:
     def test_returns_witness_id_and_public_key(self, app_ctx_with_witness) -> None:
         ctx, _ = app_ctx_with_witness
-        info = _run(get_witness_info(ctx=ctx))
+        info = _run(witness_info(ctx=ctx))
 
         assert "error" not in info, info
         assert info["witness_id"].startswith("did:synpareia:")
@@ -41,7 +41,7 @@ class TestWitnessInfo:
 
     def test_error_when_no_witness_configured(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        info = _run(get_witness_info(ctx=ctx))
+        info = _run(witness_info(ctx=ctx))
         assert "error" in info
         # Error must name the env var to set, not leak a stack trace
         assert "SYNPAREIA_WITNESS_URL" in info["error"]
@@ -56,13 +56,13 @@ class TestTimestampSealRoundtrip:
         block = synpareia.create_block(profile, type="message", content=b"claim X")
         block_hash_hex = block.content_hash.hex()
 
-        seal = _run(request_timestamp_seal(block_hash_hex=block_hash_hex, ctx=ctx))
+        seal = _run(witness_seal_timestamp(block_hash_hex=block_hash_hex, ctx=ctx))
         assert "error" not in seal, seal
 
-        info = _run(get_witness_info(ctx=ctx))
+        info = _run(witness_info(ctx=ctx))
 
         # Verify with only the public outputs — no witness network call.
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type=seal["seal_type"],
             witness_id=seal["witness_id"],
             witness_signature_b64=seal["witness_signature_b64"],
@@ -78,10 +78,10 @@ class TestTimestampSealRoundtrip:
         ctx, _ = app_ctx_with_witness
         profile = synpareia.generate()
         block = synpareia.create_block(profile, type="message", content=b"x")
-        seal = _run(request_timestamp_seal(block_hash_hex=block.content_hash.hex(), ctx=ctx))
-        info = _run(get_witness_info(ctx=ctx))
+        seal = _run(witness_seal_timestamp(block_hash_hex=block.content_hash.hex(), ctx=ctx))
+        info = _run(witness_info(ctx=ctx))
 
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type=seal["seal_type"],
             witness_id=seal["witness_id"],
             witness_signature_b64=seal["witness_signature_b64"],
@@ -96,12 +96,12 @@ class TestTimestampSealRoundtrip:
         ctx, _ = app_ctx_with_witness
         profile = synpareia.generate()
         block = synpareia.create_block(profile, type="message", content=b"x")
-        seal = _run(request_timestamp_seal(block_hash_hex=block.content_hash.hex(), ctx=ctx))
-        info = _run(get_witness_info(ctx=ctx))
+        seal = _run(witness_seal_timestamp(block_hash_hex=block.content_hash.hex(), ctx=ctx))
+        info = _run(witness_info(ctx=ctx))
 
         # Flip the first byte of the target hash
         tampered = "ff" + block.content_hash.hex()[2:]
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type=seal["seal_type"],
             witness_id=seal["witness_id"],
             witness_signature_b64=seal["witness_signature_b64"],
@@ -116,10 +116,10 @@ class TestTimestampSealRoundtrip:
         ctx, _ = app_ctx_with_witness
         profile = synpareia.generate()
         block = synpareia.create_block(profile, type="message", content=b"x")
-        seal = _run(request_timestamp_seal(block_hash_hex=block.content_hash.hex(), ctx=ctx))
+        seal = _run(witness_seal_timestamp(block_hash_hex=block.content_hash.hex(), ctx=ctx))
 
         imposter_pubkey = synpareia.generate().public_key
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type=seal["seal_type"],
             witness_id=seal["witness_id"],
             witness_signature_b64=seal["witness_signature_b64"],
@@ -134,13 +134,13 @@ class TestTimestampSealRoundtrip:
         ctx, _ = app_ctx_with_witness
         profile = synpareia.generate()
         block = synpareia.create_block(profile, type="message", content=b"x")
-        seal = _run(request_timestamp_seal(block_hash_hex=block.content_hash.hex(), ctx=ctx))
-        info = _run(get_witness_info(ctx=ctx))
+        seal = _run(witness_seal_timestamp(block_hash_hex=block.content_hash.hex(), ctx=ctx))
+        info = _run(witness_info(ctx=ctx))
 
         # Flip a byte in the signature
         sig_bytes = base64.b64decode(seal["witness_signature_b64"])
         mutated = bytes([sig_bytes[0] ^ 0x01]) + sig_bytes[1:]
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type=seal["seal_type"],
             witness_id=seal["witness_id"],
             witness_signature_b64=base64.b64encode(mutated).decode(),
@@ -157,13 +157,13 @@ class TestStateSealRoundtrip:
         ctx, _ = app_ctx_with_witness
 
         profile = synpareia.generate()
-        chain = synpareia.create_chain(profile, chain_type=synpareia.ChainType.SPHERE)
+        chain = synpareia.create_chain(profile, policy=synpareia.templates.cop(profile))
         block = synpareia.create_block(profile, type="message", content=b"hi")
         synpareia.append_block(chain, block)
         export = synpareia.export_chain(chain)
 
         seal = _run(
-            request_state_seal(
+            witness_seal_state(
                 chain_id=chain.id,
                 chain_head_hex=export["head_hash"],
                 ctx=ctx,
@@ -171,9 +171,9 @@ class TestStateSealRoundtrip:
         )
         assert "error" not in seal, seal
 
-        info = _run(get_witness_info(ctx=ctx))
+        info = _run(witness_info(ctx=ctx))
 
-        result = verify_seal_offline(
+        result = witness_verify_seal(
             seal_type=seal["seal_type"],
             witness_id=seal["witness_id"],
             witness_signature_b64=seal["witness_signature_b64"],
@@ -189,7 +189,7 @@ class TestStateSealRoundtrip:
 class TestZeroConfigWitness:
     def test_request_seal_without_witness_configured(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(request_timestamp_seal(block_hash_hex="ab" * 32, ctx=ctx))
+        result = _run(witness_seal_timestamp(block_hash_hex="ab" * 32, ctx=ctx))
         assert "error" in result
         # No stack trace leakage — must be a friendly diagnostic
         assert "SYNPAREIA_WITNESS_URL" in result["error"]

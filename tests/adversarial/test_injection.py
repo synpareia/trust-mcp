@@ -31,10 +31,10 @@ from starlette.routing import Route
 from synpareia_trust_mcp import providers
 from synpareia_trust_mcp.profile import ProfileCorruptError, ProfileManager
 from synpareia_trust_mcp.tools.recording import (
-    add_to_recording,
-    end_recording,
-    get_proof,
-    record_interaction,
+    recording_append,
+    recording_end,
+    recording_proof,
+    recording_start,
 )
 from synpareia_trust_mcp.tools.trust import evaluate_agent
 
@@ -59,7 +59,7 @@ class TestProviderResponseInjection:
 
     def test_injector_raw_text_never_in_output(self, app_ctx_with_stubs) -> None:
         ctx, _ = app_ctx_with_stubs
-        result = _run(evaluate_agent(identifier="injector", ctx=ctx))
+        result = _run(evaluate_agent(ctx=ctx, namespace="moltbook", id="injector"))
         dumped = json.dumps(result).lower()
 
         # Markers from the stub's injector fixture
@@ -75,9 +75,9 @@ class TestProviderResponseInjection:
         the lookup didn't fail, it was just filtered. This distinguishes
         'we sanitized and kept the record' from 'we dropped it entirely'."""
         ctx, _ = app_ctx_with_stubs
-        result = _run(evaluate_agent(identifier="injector", ctx=ctx))
-        # We get something back — it's just not raw text
-        assert "signals" in result
+        result = _run(evaluate_agent(ctx=ctx, namespace="moltbook", id="injector"))
+        # We get structured per-tier output — tier2 populated by moltbook adapter.
+        assert "tier2" in result
         assert "providers_queried" in result
         assert "moltbook" in result["providers_queried"]
 
@@ -90,12 +90,12 @@ class TestRecordingInjection:
         ctx, _ = app_ctx
         payload = INJECTION_PAYLOADS[0]
 
-        start = record_interaction(description=payload, ctx=ctx)
+        start = recording_start(description=payload, ctx=ctx)
         rid = start["recording_id"]
-        add_to_recording(recording_id=rid, content=payload, ctx=ctx)
-        end_recording(recording_id=rid, ctx=ctx)
+        recording_append(recording_id=rid, content=payload, ctx=ctx)
+        recording_end(recording_id=rid, ctx=ctx)
 
-        proof = get_proof(recording_id=rid, ctx=ctx)
+        proof = recording_proof(recording_id=rid, ctx=ctx)
         assert "error" not in proof
 
         # The exported chain must include the payload bytes — that's the
@@ -110,10 +110,10 @@ class TestRecordingInjection:
     def test_each_payload_safe(self, app_ctx) -> None:
         ctx, _ = app_ctx
         for payload in INJECTION_PAYLOADS:
-            start = record_interaction(description=payload, ctx=ctx)
+            start = recording_start(description=payload, ctx=ctx)
             assert "recording_id" in start, f"rejected benign payload: {payload!r}"
 
-            added = add_to_recording(recording_id=start["recording_id"], content=payload, ctx=ctx)
+            added = recording_append(recording_id=start["recording_id"], content=payload, ctx=ctx)
             assert added.get("recorded") is True
 
 
@@ -269,17 +269,19 @@ class TestProviderUrlInjection:
 
 
 class TestWitnessInfoInjection:
-    """ADV-012 — get_witness_info must reject malformed witness_id / version.
+    """ADV-012 — witness_info must reject malformed witness_id / version.
     A compromised or MITM'd witness returning prompt-injection in those
     fields is surfaced to the calling agent; we sanitize before returning."""
 
-    def test_malicious_witness_id_coerced(self, profile_manager, conversation_manager, config):
+    def test_malicious_witness_id_coerced(
+        self, profile_manager, conversation_manager, journal_store, config
+    ):
         from dataclasses import replace
 
         from synpareia.witness.client import WitnessClient
 
         from synpareia_trust_mcp.app import AppContext
-        from synpareia_trust_mcp.tools.witness import get_witness_info
+        from synpareia_trust_mcp.tools.witness import witness_info
         from tests.stubs.witness import make_witness_app
 
         app = make_witness_app(
@@ -301,6 +303,7 @@ class TestWitnessInfoInjection:
             config=config_with_witness,
             profile_manager=profile_manager,
             conversation_manager=conversation_manager,
+            journal_store=journal_store,
             witness_client=client,
         )
         from types import SimpleNamespace
@@ -309,7 +312,7 @@ class TestWitnessInfoInjection:
             request_context=SimpleNamespace(lifespan_context=app_ctx_obj),
         )
 
-        result = asyncio.run(get_witness_info(ctx=ctx))
+        result = asyncio.run(witness_info(ctx=ctx))
         dumped = json.dumps(result)
 
         assert "Ignore all previous instructions" not in dumped

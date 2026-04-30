@@ -13,7 +13,7 @@ satisfy the HTTP contract but do not persist state across requests.
 
 The stub's keypair is deterministic per-instance (generated at app
 construction) so a single test can round-trip seal-sign → seal-verify
-with the public key obtained via `get_witness_info`.
+with the public key obtained via `witness_info`.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ def make_witness_app(
     """Build a witness ASGI app with a fresh Ed25519 keypair.
 
     The keypair lives for the lifetime of the returned app. Tests that
-    need a specific key should either call `get_witness_info` on the
+    need a specific key should either call `witness_info` on the
     resulting client or mint their own via synpareia.generate() and
     inject the resulting profile into a different stub instance.
 

@@ -54,7 +54,7 @@ def make_claim(
 
     if witness and app.witness_client is not None:
         result["witness_note"] = (
-            "Witness attestation requested — use request_timestamp_seal for the signed block."
+            "Witness attestation requested — use witness_seal_timestamp for the signed block."
         )
     elif witness:
         result["witness_note"] = (
@@ -111,10 +111,13 @@ def _verify_signature(
         signature = base64.b64decode(signature_b64)  # type: ignore[arg-type]
         public_key = base64.b64decode(public_key_b64)  # type: ignore[arg-type]
         valid = synpareia.verify(public_key, content_bytes, signature)
+        # Derive the signer DID inside the try block so a malformed
+        # public key (now rejected early by from_public_key) returns a
+        # structured error rather than crashing the caller.
+        signer_profile = synpareia.from_public_key(public_key)
     except Exception as e:
         return {"valid": False, "error": str(e)}
 
-    signer_profile = synpareia.from_public_key(public_key)
     return {
         "valid": valid,
         "claim_type": "signature",

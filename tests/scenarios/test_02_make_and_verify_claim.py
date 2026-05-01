@@ -92,6 +92,55 @@ class TestMakeAndVerifyClaim:
         err = result["error"].lower()
         assert "signature" in err or "content" in err
 
+    def test_block_hash_hex_always_present(self, app_ctx) -> None:
+        """Every claim carries the SHA-256 of its content as ``block_hash_hex``.
+
+        Recipients (and the agent itself, for witness follow-up) need a
+        canonical digest to refer to the claim. Returning the hash from
+        make_claim removes the need to recompute it client-side — dojo
+        observed sonnet computing this manually before this field
+        existed (runs/2-thru-5).
+        """
+        import hashlib
+
+        ctx, _ = app_ctx
+        content = "The quick brown fox"
+        claim = make_claim(content=content, ctx=ctx)
+        assert "block_hash_hex" in claim
+        assert claim["block_hash_hex"] == hashlib.sha256(content.encode()).hexdigest()
+        assert len(claim["block_hash_hex"]) == 64  # sha256 hex
+
+    def test_witness_followup_absent_when_witness_false(self, app_ctx) -> None:
+        ctx, _ = app_ctx
+        claim = make_claim(content="x", ctx=ctx, witness=False)
+        assert "witness_followup" not in claim
+
+    def test_witness_followup_when_witness_true_no_witness_configured(self, app_ctx) -> None:
+        """When the operator opts in but no witness is configured, the
+        followup block guides them rather than silently dropping the request.
+        """
+        ctx, app = app_ctx
+        # The default app_ctx fixture has witness_url=None, so
+        # app.witness_client should be None.
+        assert app.witness_client is None
+        claim = make_claim(content="x", ctx=ctx, witness=True)
+        assert "witness_followup" in claim
+        assert claim["witness_followup"]["tool"] is None
+        assert "not configured" in claim["witness_followup"]["message"].lower()
+
+    def test_witness_followup_directs_to_seal_tool_with_block_hash(self, app_ctx) -> None:
+        """When witness IS configured, the followup block tells the agent
+        exactly which tool to call and with which block_hash_hex."""
+        ctx, app = app_ctx
+        # Inject a stub witness client so the configured-witness branch fires.
+        app.witness_client = object()  # truthy sentinel; behaviour-only test
+        try:
+            claim = make_claim(content="hello", ctx=ctx, witness=True)
+            assert claim["witness_followup"]["tool"] == "witness_seal_timestamp"
+            assert claim["witness_followup"]["params"]["block_hash_hex"] == claim["block_hash_hex"]
+        finally:
+            app.witness_client = None
+
     def test_unknown_claim_type_returns_error_with_valid_options(self, app_ctx) -> None:
         ctx, _ = app_ctx
         result = verify_claim(claim_type="telepathy", ctx=ctx)

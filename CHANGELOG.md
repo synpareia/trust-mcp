@@ -5,6 +5,47 @@ All notable changes to `synpareia-trust-mcp` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-05-01
+
+Patch release driven by dojo-run findings. Surfaced by sonnet's run on
+the fresh-discovery scenario (`dojo/findings/runs-2-thru-5.md` in the
+monorepo) — the 0.4.0 `make_claim(witness=True)` docstring promised a
+witness seal but the implementation just added a vague hint string,
+forcing agents to compute the SHA-256 of the content themselves before
+calling `witness_seal_timestamp`.
+
+> **Migration note for 0.4.0 callers reading `witness_note`:** the
+> `witness_note` string field is replaced by the structured
+> `witness_followup` dict. Pre-1.0 patch releases may carry breaking
+> field renames; if you were reading `result["witness_note"]`, switch
+> to `result["witness_followup"]["message"]` (with the same human-
+> readable purpose) or use the new `tool` and `params` keys to drive
+> the witness seal call programmatically.
+
+### Changed
+
+- `make_claim` now always returns `block_hash_hex` (SHA-256 of the
+  signed content as hex). Recipients and the agent itself need a
+  canonical digest to refer to the claim; pre-computing it removes
+  the manual hashing dojo observed agents doing.
+- `make_claim(witness=True)` now returns a structured `witness_followup`
+  block (`{tool, params: {block_hash_hex}, message}`) replacing the
+  earlier `witness_note` string. The block tells the agent exactly
+  which tool to call (`witness_seal_timestamp`) and with which
+  argument — no manual hash computation, no docstring/behaviour
+  mismatch. When witness isn't configured, `tool` is `None` and the
+  message points at the env vars to set.
+- `make_claim` docstring is rewritten to be honest about the two-step
+  flow: signed claim from this synchronous tool, witness seal from a
+  separate async one. The hash returned bridges them cleanly.
+
+### Added
+
+- Four new tests in `test_02_make_and_verify_claim.py` pinning the new
+  fields: `block_hash_hex` always present and matches SHA-256 of
+  content; `witness_followup` absent when `witness=False`; configured
+  vs unconfigured witness paths each return the right shape.
+
 ## [0.4.0] - 2026-04-23
 
 Four-tier reputation-evidence taxonomy ships as the v1 tool surface. The

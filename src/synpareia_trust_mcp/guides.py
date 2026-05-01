@@ -106,9 +106,11 @@ binding agreements, identity assertions.
 Proves your assessment was independent — you committed before seeing others' conclusions. \
 The nonce stays with you; share only the commitment hash.
 
-**Witness-attested claims** (make_claim with witness=True): Sign content AND get a \
-witness timestamp seal. Proves both authorship and timing. Use for: time-sensitive \
-claims, regulatory compliance, high-stakes assertions.
+**Witness-attested claims** (make_claim with witness=True): Sign content and get a \
+structured `witness_followup` block telling you exactly which async tool to call \
+(`witness_seal_timestamp`) and with which `block_hash_hex` to attach a witness seal. \
+Two-step flow: signed claim now, witness seal after. Use for: time-sensitive claims, \
+regulatory compliance, high-stakes assertions.
 
 ## Choosing assurance level
 - **Tier 1 (signature only):** Sufficient for routine claims, attributable content, \

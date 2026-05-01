@@ -7,6 +7,7 @@ from typing import Any
 
 import synpareia
 from mcp.server.fastmcp import Context
+from synpareia.hash import content_hash_hex
 
 from synpareia_trust_mcp.app import AppContext, mcp
 
@@ -19,7 +20,15 @@ def make_claim(
 ) -> dict[str, Any]:
     """Sign content with your private key, creating a verifiable claim.
 
-    Set witness=True to also get a witness timestamp seal.
+    The result always contains the signature and the verification
+    instructions a third party needs.
+
+    If ``witness=True``, the result additionally carries a
+    ``witness_followup`` block telling you how to attach a witness
+    timestamp seal — ``witness_seal_timestamp`` is a separate async
+    tool, so the seal isn't bundled into this synchronous call. Pass
+    the pre-computed ``block_hash_hex`` from this result straight to
+    that tool and it will sign and return the seal.
     """
     app: AppContext = ctx.request_context.lifespan_context
     profile = app.profile_manager.profile
@@ -27,12 +36,17 @@ def make_claim(
     assert profile.private_key is not None
     content_bytes = content.encode()
     signature = synpareia.sign(profile.private_key, content_bytes)
+    # Use the SDK's canonical content-hash helper so trust-mcp and
+    # downstream witness/recording paths agree on the digest by
+    # construction.
+    block_hash = content_hash_hex(content)
 
     result: dict[str, Any] = {
         "content": content,
         "signature_b64": base64.b64encode(signature).decode(),
         "signer_did": profile.id,
         "public_key_b64": base64.b64encode(profile.public_key).decode(),
+        "block_hash_hex": block_hash,
         "verification_instructions": {
             "tool": "verify_claim",
             "params": {
@@ -53,14 +67,25 @@ def make_claim(
     }
 
     if witness and app.witness_client is not None:
-        result["witness_note"] = (
-            "Witness attestation requested — use witness_seal_timestamp for the signed block."
-        )
+        result["witness_followup"] = {
+            "tool": "witness_seal_timestamp",
+            "params": {"block_hash_hex": block_hash},
+            "message": (
+                "Pass block_hash_hex to witness_seal_timestamp. The result "
+                "includes witness_id, sealed_at, and witness_signature_b64 "
+                "you can attach alongside this claim. Recipients verify the "
+                "seal offline against the witness's published public key."
+            ),
+        }
     elif witness:
-        result["witness_note"] = (
-            "Witness not configured. Claim is signed but not witness-attested. "
-            "Set SYNPAREIA_WITNESS_URL."
-        )
+        result["witness_followup"] = {
+            "tool": None,
+            "message": (
+                "Witness not configured. Claim is signed but not witness-attested. "
+                "Set SYNPAREIA_WITNESS_URL (and optionally SYNPAREIA_WITNESS_TOKEN) "
+                "to enable witness seals."
+            ),
+        }
 
     return result
 

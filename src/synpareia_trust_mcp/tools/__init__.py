@@ -3,6 +3,7 @@
 from synpareia_trust_mcp.tools import (  # noqa: F401
     attested_reputation,
     commitment,
+    directory,
     identity,
     media_signals,
     orient,

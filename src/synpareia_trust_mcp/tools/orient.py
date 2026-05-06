@@ -81,12 +81,19 @@ def orient(ctx: Context) -> dict[str, Any]:
     profile_data = app.profile_manager.get_profile_data()
     config = app.config
 
-    # Identity status
+    # Identity status — surfaces directory state when known. The
+    # ``published_card.json`` cache is written by Phase 1g's
+    # ``publish_profile`` tool; agents that haven't published yet see
+    # ``directory.published == False``. Persistence opt-in is read
+    # from the cache so operators don't accidentally retract a
+    # standing commitment to verifiers.
+    directory_state = _read_directory_state(app)
     identity = {
         "did": profile_data["did"],
         "public_key_b64": profile_data["public_key_b64"],
         "display_name": config.display_name,
         "has_private_key": profile_data["has_private_key"],
+        "directory": directory_state,
     }
 
     # Configuration status
@@ -185,6 +192,67 @@ def _get_version_info() -> dict[str, str]:
     from synpareia_trust_mcp import __version__
 
     return {"installed": __version__}
+
+
+def _read_directory_state(app: Any) -> dict[str, Any]:
+    """Read the operator's last-published card from disk and surface
+    a compact summary for ``orient``.
+
+    Returns ``{"published": bool, "name": str | None, "version": str
+    | None, "last_published_at": str | None, "persistence":
+    {"opted_in": bool, "scope": list[str] | None, "opted_in_at":
+    str | None}}``. ``last_published_at`` is the file mtime — the
+    Phase 1g cache doesn't capture the directory's signed_at, so
+    mtime is the closest local proxy.
+    """
+    import json
+    from datetime import UTC, datetime
+
+    cached_path = app.config.data_dir / "published_card.json"
+    if not cached_path.exists():
+        return {
+            "published": False,
+            "name": None,
+            "version": None,
+            "last_published_at": None,
+            "persistence": {"opted_in": False, "scope": None, "opted_in_at": None},
+        }
+
+    try:
+        cached = json.loads(cached_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {
+            "published": True,  # cache exists but unreadable — operator should investigate
+            "name": None,
+            "version": None,
+            "last_published_at": None,
+            "persistence": {"opted_in": False, "scope": None, "opted_in_at": None},
+            "warning": "published_card.json is unreadable",
+        }
+
+    a2a = cached.get("a2a") or {}
+    syn = cached.get("synpareia") or {}
+    scope = syn.get("persistence_scope")
+    # ``delete_profile`` annotates the cache with ``tombstoned_at``
+    # rather than removing the file (the cache stays for inspection).
+    # Surface it as ``published=False`` so operators see the
+    # current directory state, not just "we have a card file".
+    tombstoned_at = cached.get("tombstoned_at")
+    return {
+        "published": tombstoned_at is None,
+        "name": a2a.get("name"),
+        "version": a2a.get("version"),
+        "last_published_at": datetime.fromtimestamp(
+            cached_path.stat().st_mtime, tz=UTC
+        ).isoformat(),
+        "tombstoned_at": tombstoned_at,
+        "tombstoned_reason": cached.get("tombstoned_reason"),
+        "persistence": {
+            "opted_in": bool(scope),
+            "scope": list(scope) if scope else None,
+            "opted_in_at": syn.get("persistence_opted_in_at"),
+        },
+    }
 
 
 def _get_next_steps(config: Any, active_conversations: list) -> list[str]:

@@ -5,6 +5,69 @@ All notable changes to `synpareia-trust-mcp` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-05-12
+
+Defensive security floor on a transitive dependency. No code changes,
+no new tools, no behavioural change from 0.5.0.
+
+### Security
+
+- Add `python-multipart>=0.0.27` to the runtime dependency floor.
+  CVE-2026-42561 affects `python-multipart<0.0.27` (pulled in
+  transitively via `mcp`). The trust-toolkit's published MCP server
+  uses stdio transport and does not itself invoke multipart parsing,
+  so the vulnerability is not reachable on the toolkit's own surface;
+  the floor is defence-in-depth for downstream operators who might
+  enable HTTP transports on top of `mcp`.
+
+## [0.5.0] - 2026-05-06
+
+Phase 1 of the funnel-implementation-roadmap. Wires the new SDK 0.5.0
+profile-directory surface into the MCP, taking the tool count from 25
+to 32. Pairs with `synpareia 0.5.0` on PyPI; the floor declared in
+`pyproject.toml` ensures consumers re-resolve appropriately.
+
+### Added
+
+- **Profile directory tools** (7 new): `publish_profile` (build + sign
+  + publish your agent card to the directory), `get_profile(did)`
+  (counterparty existence-layer fetch), `update_profile_policy`
+  (rebuild + re-sign + re-publish, preserving unspecified fields and
+  the persistence opt-in across updates), `enable_persistence(scope)`
+  / `disable_persistence()` (opt-in/out helpers for `card_history`,
+  `key_chain`, `reputation`), `delete_profile_history(version)` and
+  `delete_profile()` (sigauth-protected erasure).
+- **`orient` now surfaces directory state** under
+  `identity.directory.{published, name, version, last_published_at,
+  persistence}` so a fresh agent's first call tells it whether it has
+  a published profile and what's in it.
+- **`SYNPAREIA_NETWORK_URL` env var** as the directory base URL (also
+  used by the synpareia-reputation provider).
+- **On-disk cache** at `data_dir/published_card.json` records the last-
+  published shape so `update_profile_policy` only changes what's
+  specified (true to its name). `delete_profile` annotates the cache
+  with `tombstoned_at` so `orient` reports `published=False` post-
+  delete.
+- New `tools/directory.py` module wrapping the SDK 0.5.0 `ProfileClient`
+  / `SyncProfileClient` consumer-side surface.
+- 9 new tests for the directory tools + 2 regression tests on the
+  Copilot-review fix-up (access-token forwarding, structured-error
+  envelope preservation, tombstone-aware orient).
+
+### Changed
+
+- Floor on `synpareia[witness,profile]>=0.5.0` (was `>=0.4.0`).
+- `expected_tools` list synced to 32.
+- Network-backed tools return structured `not_configured` errors that
+  name the specific env var when their dependency is missing — replaces
+  free-text error strings so wrapper MCPs can route on the error code.
+
+### Security
+
+- Sigauth flow on all mutating directory operations (publish, update,
+  delete) via the SDK's RFC 9421 wrapper. Read operations
+  (`get_profile`) are unauthenticated by design (existence-layer).
+
 ## [0.4.1] - 2026-05-01
 
 Patch release driven by dojo-run findings. Surfaced by sonnet's run on

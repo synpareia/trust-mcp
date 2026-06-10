@@ -18,6 +18,24 @@ from synpareia_trust_mcp.profile import ProfileManager
 pytest_plugins = ["tests.stubs.fixtures"]
 
 
+@pytest.fixture(autouse=True)
+def _no_live_network(monkeypatch):
+    """Suite-wide guard (2026-06-10): ``Config.load()`` now defaults the
+    service URLs to the LIVE deployed services (live-by-default, audit
+    D-12b). A test building config from the environment without explicit
+    opt-out would hit production — this actually happened once during
+    development (a test published a real profile to the live directory).
+
+    Tests that need a URL set one explicitly (env var or Config kwargs).
+    CAVEAT: ``patch.dict(os.environ, ..., clear=True)`` wipes this guard —
+    such tests must set their own opt-outs. A socket-level guard
+    (pytest-socket) is the robust version; tracked on the launch hit-list
+    (Phase 4, CI truth).
+    """
+    monkeypatch.setenv("SYNPAREIA_NETWORK_URL", "none")
+    monkeypatch.setenv("SYNPAREIA_WITNESS_URL", "none")
+
+
 @pytest.fixture()
 def tmp_data_dir(tmp_path: Path) -> Path:
     """Temporary data directory for test isolation."""

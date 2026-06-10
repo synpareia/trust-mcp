@@ -27,7 +27,7 @@ from pathlib import Path
 
 import synpareia
 
-from synpareia_trust_mcp.config import Config
+from synpareia_trust_mcp.config import DEFAULT_NETWORK_URL, DEFAULT_WITNESS_URL, Config
 from synpareia_trust_mcp.conversations import ConversationManager
 from synpareia_trust_mcp.profile import ProfileManager
 
@@ -63,8 +63,10 @@ class TestFreshInstall:
     def test_zero_env_load_does_not_raise(self, tmp_path: Path) -> None:
         with _clean_env(SYNPAREIA_DATA_DIR=str(tmp_path / "data")):
             config = Config.load()
-            assert config.witness_url is None
-            assert config.network_url is None
+            # Live-by-default since 0.6 (audit D-12b): zero env points the
+            # service URLs at the deployed network; everything else stays off.
+            assert config.witness_url == DEFAULT_WITNESS_URL
+            assert config.network_url == DEFAULT_NETWORK_URL
             assert config.moltbook_api_url is None
             assert config.moltrust_api_key is None
 

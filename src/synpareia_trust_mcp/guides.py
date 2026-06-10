@@ -261,6 +261,11 @@ Trust is bidirectional. Another agent may ask you to:
 - Participate in a blind conclusion → use prove_independence with the shared key
 - Respond to a liveness challenge → handled automatically if configured
 
+Caveat: the witness does not verify participant identities on blind conclusions or \
+liveness challenges — identity binding is self-asserted in v1, so tie what you learn \
+to the counterparty's verified key (DID + signature), not to the identity label they \
+submitted to the witness.
+
 ## Graceful degradation
 Not all counterparties will participate. Unilateral trust tools (signing, recording, \
 witness attestation) still work. The record is less complete but still valuable — \

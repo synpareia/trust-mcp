@@ -313,12 +313,20 @@ def test_delete_profile_succeeds_with_no_opt_in(tmp_path: Path) -> None:
 
 
 def test_publish_requires_directory_url(tmp_path: Path) -> None:
-    """When SYNPAREIA_NETWORK_URL is unset, publish_profile errors cleanly."""
+    """When the network is opted out, publish_profile errors cleanly.
+
+    Live-by-default (audit D-12b): an UNSET url now means the live
+    directory, so this test opts out explicitly. (Pre-guard, the unset
+    form of this test published a real profile to production — see the
+    _no_live_network conftest fixture.)
+    """
 
     async def run() -> None:
         env = {
             "SYNPAREIA_DATA_DIR": str(tmp_path),
             "SYNPAREIA_AUTO_REGISTER": "false",
+            "SYNPAREIA_NETWORK_URL": "none",
+            "SYNPAREIA_WITNESS_URL": "none",
         }
         # Important: clear so any inherited NETWORK_URL doesn't leak.
         with patch.dict(os.environ, env, clear=True):

@@ -5,6 +5,57 @@ All notable changes to `synpareia-trust-mcp` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-06-10
+
+Live-by-default release (audit D-12b / launch hit-list 1.6): a fresh
+install now finds the deployed synpareia services without any env-var
+setup. Minor bump under the pre-1.0 SemVer caveat — the default-URL
+change is a behaviour change for existing installs that relied on the
+old local-only default, documented loudly below with the opt-out.
+Pairs with `synpareia` SDK 0.6.0 on PyPI (publish ordering: the SDK
+must be indexed first; see the floor bump under Changed).
+
+### Changed
+
+- **BEHAVIOUR CHANGE — network and witness URLs now default to the
+  live services.** `SYNPAREIA_NETWORK_URL` defaults to
+  `https://synpareia.fly.dev` and `SYNPAREIA_WITNESS_URL` to
+  `https://synpareia-witness.fly.dev` (both previously defaulted to
+  `None`, i.e. local-only, so a fresh install never found the deployed
+  network). **How to opt out:** set the env var to `none`, `off`,
+  `disabled`, or the empty string (case-insensitive) to disable the
+  feature entirely (fully local); set any other value to point at a
+  self-hosted or staging instance. `SYNPAREIA_AUTO_REGISTER` remains
+  `false`: nothing is published to the directory unless you explicitly
+  call a publishing tool.
+- **NOTE FOR TEST SUITES AND CI:** if your test suite exercises
+  network-touching tools (directory, witness, reputation) without
+  opting out, it will now reach the **production** services. Set
+  `SYNPAREIA_NETWORK_URL=none` and `SYNPAREIA_WITNESS_URL=none` in your
+  test environment (this repo does it with a suite-wide autouse
+  fixture), or block sockets outright with `pytest-socket`. This is not
+  hypothetical: during development of this change, an unguarded test
+  suite published a test profile to the production directory.
+- **Floor bump: `synpareia[witness,profile]>=0.6.0`** (was `>=0.5.0`).
+  Picks up the SDK's `verify_block` fail-closed fix and the RFC 8785
+  canonicalization swap — see the SDK 0.6.0 CHANGELOG for the breaking
+  notes (`verify_block` unsigned-pass removal; ints outside ±2^53 now
+  raise; floats now signable).
+- `README.md` privacy section rewritten honestly for the new posture
+  (storage stays local-first; network-touching tools reach the live
+  services unless opted out), and the `SYNPAREIA_AUTO_REGISTER` doc row
+  corrected (docs said `true`; the code default has always been
+  `false`).
+
+### Notes
+
+- **Honesty note on witness identity binding (audit D-9):** the witness
+  service does not verify the requester identity submitted with blind
+  conclusions or liveness challenges — identity binding is the caller's
+  self-asserted claim in v1, until Phase-2 anonymous credentials land.
+  The witness tool docstrings and guides now say so explicitly. No
+  behaviour change.
+
 ## [0.5.1] - 2026-05-12
 
 Defensive security floor on a transitive dependency. No code changes,

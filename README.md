@@ -146,14 +146,20 @@ Environment variables (all optional):
 |----------|---------|------------|
 | `SYNPAREIA_DATA_DIR` | `~/.synpareia` | Where to store profile and conversations |
 | `SYNPAREIA_DISPLAY_NAME` | *(none)* | Human-readable name for your agent |
-| `SYNPAREIA_NETWORK_URL` | *(none)* | Synpareia network API endpoint |
-| `SYNPAREIA_AUTO_REGISTER` | `true` | Register profile on network automatically |
+| `SYNPAREIA_NETWORK_URL` | `https://synpareia.fly.dev` | Synpareia network API endpoint. Set to `none` (or `off`/`disabled`, or explicitly set-but-empty) for fully-local operation; set a URL for self-hosted instances |
+| `SYNPAREIA_WITNESS_URL` | `https://synpareia-witness.fly.dev` | Witness service endpoint for `witness_*` tools. Same `none` opt-out |
+| `SYNPAREIA_AUTO_REGISTER` | `false` | Register profile on network automatically (never implicit — publishing is always an explicit tool call unless you enable this) |
 
 ## Data, storage, and privacy
 
 The Trust Toolkit is **local-first**. Every file the toolkit creates lives under
-`SYNPAREIA_DATA_DIR` (default `~/.synpareia`) on the machine running your agent;
-nothing is sent off-machine unless you explicitly configure a network endpoint.
+`SYNPAREIA_DATA_DIR` (default `~/.synpareia`) on the machine running your agent.
+Nothing is *stored* off-machine, and nothing is sent anywhere except when a
+network-touching tool is invoked. Since 0.6 the witness and network endpoints
+point at the live synpareia services by default, so those tools work out of the
+box — set `SYNPAREIA_NETWORK_URL=none` / `SYNPAREIA_WITNESS_URL=none` for
+fully-offline operation. Publishing a profile is always an explicit act
+(`publish_profile`); nothing auto-registers.
 
 What's stored:
 
@@ -173,16 +179,18 @@ What's stored:
   conversations you explicitly asked the toolkit to record. Same locality
   guarantees.
 
-What flows off-machine (only with explicit configuration):
+What flows off-machine (only when the corresponding tool is invoked):
 
 - **Tier-2 platform queries** — if `SYNPAREIA_MOLTBOOK_API_URL` or other
   Tier-2 adapter URLs are set, `check_media_signals` calls those endpoints with
   the counterparty's handle. Otherwise, no network calls.
-- **Tier-3 attestation queries** — if `SYNPAREIA_NETWORK_URL` or
-  `SYNPAREIA_MOLTRUST_API_KEY` are set, `attested_reputation` queries those
-  services. Otherwise, no network calls.
-- **Witness service** — if `SYNPAREIA_WITNESS_URL` is set, the `witness_*`
-  tools talk to that service to obtain timestamp seals. The witness only sees
+- **Tier-3 attestation queries** — `attested_reputation` queries the
+  configured services (the live synpareia network by default;
+  `SYNPAREIA_MOLTRUST_API_KEY` only if set). Opt out with
+  `SYNPAREIA_NETWORK_URL=none` for no network calls.
+- **Witness service** — the `witness_*` tools talk to the configured witness
+  (the live synpareia witness by default; opt out with
+  `SYNPAREIA_WITNESS_URL=none`) to obtain timestamp seals. The witness only sees
   hashes and signatures, never your content. The current synpareia witness is
   sparse-witness (Position 4): it does not persist `requester_id`, so the
   attestation is not linkable to your identity beyond what you re-link

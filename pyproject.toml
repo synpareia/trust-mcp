@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "synpareia-trust-mcp"
-version = "0.5.1"
+version = "0.6.0"
 description = "Identity and trust tools for AI agents — MCP server"
 readme = "README.md"
 license = "Apache-2.0"
@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "synpareia[witness,profile]>=0.5.0",
+    "synpareia[witness,profile]>=0.6.0",
     "mcp[cli]>=1.0",
     "python-multipart>=0.0.27",  # security floor — CVE-2026-42561 (transitive via mcp)
 ]

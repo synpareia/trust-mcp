@@ -253,6 +253,11 @@ async def witness_submit_blind(
 
     `conclusion_key` is a shared identifier both parties agree on first
     (e.g., "dispute-42", a URL, or a hash of the question).
+
+    Note: the witness does not verify the requester identity submitted
+    with a commitment — identity binding is the caller's self-asserted
+    claim in v1 (until Phase-2 anonymous credentials), so verify the
+    counterparty's reveal against their known key, not the slot label.
     """
     app = ctx.request_context.lifespan_context
     try:
@@ -290,6 +295,9 @@ async def witness_get_blind(
     Pair to `witness_submit_blind`. Returns whether both parties have
     submitted their commitments, and — once both have — the pair of
     commitment hashes so each party can verify the other's reveal.
+
+    Note: party identities on a conclusion are self-asserted in v1 —
+    the witness does not verify who occupies each slot.
     """
     app = ctx.request_context.lifespan_context
     try:

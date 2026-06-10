@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from synpareia_trust_mcp.config import Config
+from synpareia_trust_mcp.config import DEFAULT_NETWORK_URL, DEFAULT_WITNESS_URL, Config
 
 
 class TestConfigDefaults:
@@ -20,10 +20,12 @@ class TestConfigDefaults:
             config = Config.load()
             assert config.display_name is None
 
-    def test_default_network_url_is_none(self) -> None:
+    def test_default_network_url_is_live_directory(self) -> None:
+        # Live-by-default since 0.6 (audit D-12b): a fresh install finds
+        # the deployed network; agents opt OUT rather than opt in.
         with patch.dict(os.environ, {}, clear=True):
             config = Config.load()
-            assert config.network_url is None
+            assert config.network_url == DEFAULT_NETWORK_URL
 
     def test_default_auto_register_is_false(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -45,10 +47,34 @@ class TestConfigDefaults:
             config = Config.load()
             assert config.moltrust_api_key is None
 
-    def test_default_witness_url_is_none(self) -> None:
+    def test_default_witness_url_is_live_witness(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             config = Config.load()
-            assert config.witness_url is None
+            assert config.witness_url == DEFAULT_WITNESS_URL
+
+    def test_url_opt_out_values_disable_feature(self) -> None:
+        for sentinel in ("", "none", "OFF", "Disabled", " none "):
+            with patch.dict(
+                os.environ,
+                {"SYNPAREIA_NETWORK_URL": sentinel, "SYNPAREIA_WITNESS_URL": sentinel},
+                clear=True,
+            ):
+                config = Config.load()
+                assert config.network_url is None, f"sentinel {sentinel!r}"
+                assert config.witness_url is None, f"sentinel {sentinel!r}"
+
+    def test_url_env_overrides_default(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "SYNPAREIA_NETWORK_URL": "https://staging.example.com",
+                "SYNPAREIA_WITNESS_URL": "https://witness.example.com",
+            },
+            clear=True,
+        ):
+            config = Config.load()
+            assert config.network_url == "https://staging.example.com"
+            assert config.witness_url == "https://witness.example.com"
 
     def test_default_witness_token_is_none(self) -> None:
         with patch.dict(os.environ, {}, clear=True):

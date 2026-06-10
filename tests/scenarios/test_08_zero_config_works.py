@@ -1,8 +1,12 @@
-"""Scenario 08: Zero-config install produces a usable trust toolkit.
+"""Scenario 08: Offline (opted-out) install produces a usable trust toolkit.
 
 See scenarios/trust-toolkit/08-zero-config-works.md.
 
-With no env vars set, the toolkit must:
+Since 0.6 a zero-config install points at the LIVE network by default
+(audit D-12b; ``Config.load`` defaults — pinned in tests/test_config.py).
+This scenario pins the explicitly opted-out posture
+(``SYNPAREIA_WITNESS_URL=none`` etc., here modelled by a Config with None
+URLs): the toolkit must still be fully usable offline:
 - Auto-generate a profile with 0600 permissions
 - Offer every offline tool working
 - Degrade every online tool gracefully with a helpful message

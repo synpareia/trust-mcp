@@ -31,6 +31,10 @@ class AppContext:
     conversation_manager: ConversationManager
     journal_store: JournalStore
     witness_client: WitnessClient | None = None
+    # Cached witness public key (b64), populated lazily the first time a seal
+    # tool needs it for a self-describing `verify_followup`. The witness key is
+    # stable, so we fetch it at most once per session.
+    witness_pubkey_b64: str | None = None
 
 
 @asynccontextmanager

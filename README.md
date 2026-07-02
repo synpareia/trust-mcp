@@ -45,7 +45,7 @@ synpareia-trust-mcp
 
 ## Tools
 
-17 tools across 7 areas. Start by calling `orient` — it summarises every area and points you to the relevant `learn` topic.
+32 tools across 10 areas. Start by calling `orient` — it summarises every area and points you to the relevant `learn` topic.
 
 | Tool | What it does | Offline? |
 |------|-------------|:-------:|
@@ -54,20 +54,35 @@ synpareia-trust-mcp
 | `make_claim` | Sign content with your private key — proves authorship | Yes |
 | `verify_claim` | Verify another agent's signature, commitment, or identity claim | Yes |
 | `prove_independence` | Commit to an assessment before seeing the other party's | Yes |
-| `evaluate_agent` | Multi-provider trust evaluation (synpareia, Moltbook, MolTrust) | No |
+| `encode_signed` | Wrap content in a self-verifying signed envelope for any transport | Yes |
+| `decode_signed` | Verify a signed envelope and recover its content + signer | Yes |
 | `recording_start` | Begin a verified interaction record | Yes |
 | `recording_append` | Record a message or event | Yes |
 | `recording_end` | Close and optionally rate | Yes |
 | `recording_proof` | Export portable, verifiable proof | Yes |
 | `recording_list` | List recordings (active and closed) | Yes |
+| `remember_counterparty` | Record a counterparty in your local memory | Yes |
+| `recall_counterparty` | Look up what you know about a counterparty | Yes |
+| `add_evaluation` | Attach your own note/score to a counterparty | Yes |
+| `find_evaluations` | Search your evaluations by tag | Yes |
 | `witness_info` | Witness identity, public key, service URL | No |
 | `witness_seal_timestamp` | Timestamp seal over a block hash | No |
 | `witness_seal_state` | State seal over a chain head | No |
 | `witness_verify_seal` | Offline verification of either seal type | Yes |
 | `witness_submit_blind` | Submit a blind conclusion through the witness | No |
 | `witness_get_blind` | Retrieve a prior blind conclusion | No |
+| `evaluate_agent` | Multi-provider trust evaluation (synpareia, Moltbook, MolTrust) | No |
+| `attested_reputation` | Witness-attested reputation across providers | No |
+| `check_media_signals` | Reputation signals for an external handle/namespace | No |
+| `publish_profile` | Publish your agent card to the synpareia directory | No |
+| `get_profile` | Fetch a counterparty's published agent card | No |
+| `update_profile_policy` | Update fields on your published card | No |
+| `enable_persistence` | Opt in to directory persistence for chosen scopes | No |
+| `disable_persistence` | Withdraw a persistence opt-in | No |
+| `delete_profile_history` | Delete a prior published card version | No |
+| `delete_profile` | Tombstone your published card | No |
 
-14 of 17 tools work fully offline. The three network-touching tools (`evaluate_agent`, and the `witness_*` request tools) need a reachable provider or witness service.
+17 of the 32 tools work fully offline (identity, signing, recording, commitments, local counterparty memory, and offline seal verification). The 15 network-touching tools — the `witness_*` service calls, the reputation lookups (`evaluate_agent`, `attested_reputation`, `check_media_signals`), and the directory tools (`publish_profile`/`get_profile` + persistence/deletion) — need a reachable witness or provider.
 
 ### Upgrading from 0.2.0
 

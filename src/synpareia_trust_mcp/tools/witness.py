@@ -75,6 +75,73 @@ def _safe_witness_version(val: object) -> str:
     return "unknown"
 
 
+async def _cached_witness_pubkey_b64(app: AppContext, client: WitnessClient) -> str | None:
+    """Witness public key (b64), fetched + cached once per session (best-effort).
+
+    Used to make seal responses self-describing: the `verify_followup` block
+    embeds the pubkey so a third-party recipient can run `witness_verify_seal`
+    fully offline, with no separate `witness_info` round-trip. Returns None if
+    the fetch fails — the seal itself already succeeded, so a followup without
+    the key still degrades gracefully (the recipient can fetch it via
+    `witness_info`).
+
+    Cache lifetime is the session. That can't go stale in practice: the witness
+    signing key is a hard non-rotation invariant (CLAUDE.md §0 — never rotated
+    without a full key-rotation redesign), so the pubkey is stable for the process.
+    """
+    if app.witness_pubkey_b64 is None:
+        try:
+            info = await client.get_witness_info()
+            app.witness_pubkey_b64 = info.public_key_b64
+        except Exception:
+            return None
+    return app.witness_pubkey_b64
+
+
+def _verify_followup(
+    *,
+    seal_type: str,
+    witness_id: str,
+    witness_signature_b64: str,
+    sealed_at: str,
+    witness_public_key_b64: str | None,
+    target_block_hash_hex: str | None = None,
+    target_chain_id: str | None = None,
+    target_chain_head_hex: str | None = None,
+) -> dict:
+    """Self-describing hand-off block mirroring make_claim's ``witness_followup``.
+
+    Gives the exact ``witness_verify_seal`` params for this seal so a recipient
+    can verify it verbatim — no field-name guesswork (LR-6). Includes the
+    witness public key when available so verification needs no witness call.
+    """
+    params: dict[str, str] = {
+        "seal_type": seal_type,
+        "witness_id": witness_id,
+        "witness_signature_b64": witness_signature_b64,
+        "sealed_at": sealed_at,
+    }
+    if target_block_hash_hex is not None:
+        params["target_block_hash_hex"] = target_block_hash_hex
+    if target_chain_id is not None:
+        params["target_chain_id"] = target_chain_id
+    if target_chain_head_hex is not None:
+        params["target_chain_head_hex"] = target_chain_head_hex
+    if witness_public_key_b64 is not None:
+        params["witness_public_key_b64"] = witness_public_key_b64
+        message = (
+            "Pass these params straight to witness_verify_seal to check this seal "
+            "offline — no witness call needed. Anyone you forward this seal to can "
+            "verify it independently with the included witness_public_key_b64."
+        )
+    else:
+        message = (
+            "Pass these params to witness_verify_seal, plus witness_public_key_b64 "
+            "from witness_info (the witness was unreachable to embed it here)."
+        )
+    return {"tool": "witness_verify_seal", "params": params, "message": message}
+
+
 @mcp.tool()
 async def witness_info(ctx: Context[ServerSession, AppContext]) -> dict:
     """Fetch the witness service's identity and public key.
@@ -91,9 +158,13 @@ async def witness_info(ctx: Context[ServerSession, AppContext]) -> dict:
     try:
         client = _require_witness(app)
         info = await client.get_witness_info()
+        app.witness_pubkey_b64 = info.public_key_b64
         return {
             "witness_id": _safe_witness_id(info.witness_id),
             "public_key_b64": info.public_key_b64,
+            # Alias under witness_verify_seal's exact param name (0.6.2, LR-6) so the
+            # witness_info -> witness_verify_seal hop pipes verbatim.
+            "witness_public_key_b64": info.public_key_b64,
             "public_key_hex": info.public_key_hex,
             "version": _safe_witness_version(info.version),
         }
@@ -122,12 +193,29 @@ async def witness_seal_timestamp(
 
         block_hash = bytes.fromhex(block_hash_hex)
         seal = await client.timestamp_seal(block_hash)
+        seal_type = str(seal.seal_type)
+        witness_id = _safe_witness_id(seal.witness_id)
+        sealed_at = seal.sealed_at.isoformat()
+        signature_b64 = base64.b64encode(seal.witness_signature).decode()
+        pubkey_b64 = await _cached_witness_pubkey_b64(app, client)
         return {
-            "seal_type": str(seal.seal_type),
-            "witness_id": _safe_witness_id(seal.witness_id),
-            "sealed_at": seal.sealed_at.isoformat(),
+            "seal_type": seal_type,
+            "witness_id": witness_id,
+            "sealed_at": sealed_at,
+            # Canonical name — matches witness_verify_seal's param exactly (0.6.2, LR-6).
+            "target_block_hash_hex": block_hash_hex,
+            # Deprecated alias (pre-0.6.2 name); verify still accepts it. Kept one
+            # release for back-compat, will be dropped in a future major.
             "target_block_hash": block_hash_hex,
-            "witness_signature_b64": base64.b64encode(seal.witness_signature).decode(),
+            "witness_signature_b64": signature_b64,
+            "verify_followup": _verify_followup(
+                seal_type=seal_type,
+                witness_id=witness_id,
+                witness_signature_b64=signature_b64,
+                sealed_at=sealed_at,
+                witness_public_key_b64=pubkey_b64,
+                target_block_hash_hex=block_hash_hex,
+            ),
         }
     except Exception as e:
         return {"error": str(e)}
@@ -155,13 +243,30 @@ async def witness_seal_state(
 
         chain_head = bytes.fromhex(chain_head_hex)
         seal = await client.state_seal(chain_id, chain_head)
+        seal_type = str(seal.seal_type)
+        witness_id = _safe_witness_id(seal.witness_id)
+        sealed_at = seal.sealed_at.isoformat()
+        signature_b64 = base64.b64encode(seal.witness_signature).decode()
+        pubkey_b64 = await _cached_witness_pubkey_b64(app, client)
         return {
-            "seal_type": str(seal.seal_type),
-            "witness_id": _safe_witness_id(seal.witness_id),
-            "sealed_at": seal.sealed_at.isoformat(),
+            "seal_type": seal_type,
+            "witness_id": witness_id,
+            "sealed_at": sealed_at,
             "target_chain_id": seal.target_chain_id,
+            # Canonical name — matches witness_verify_seal's param exactly (0.6.2, LR-6).
+            "target_chain_head_hex": chain_head_hex,
+            # Deprecated alias (pre-0.6.2 name); verify still accepts it.
             "target_chain_head": chain_head_hex,
-            "witness_signature_b64": base64.b64encode(seal.witness_signature).decode(),
+            "witness_signature_b64": signature_b64,
+            "verify_followup": _verify_followup(
+                seal_type=seal_type,
+                witness_id=witness_id,
+                witness_signature_b64=signature_b64,
+                sealed_at=sealed_at,
+                witness_public_key_b64=pubkey_b64,
+                target_chain_id=seal.target_chain_id,
+                target_chain_head_hex=chain_head_hex,
+            ),
         }
     except Exception as e:
         return {"error": str(e)}
@@ -178,19 +283,26 @@ def witness_verify_seal(
     target_block_hash_hex: str | None = None,
     target_chain_id: str | None = None,
     target_chain_head_hex: str | None = None,
+    target_block_hash: str | None = None,
+    target_chain_head: str | None = None,
 ) -> dict:
     """Verify a witness seal offline — no calls to the witness service.
 
-    Provide the seal fields (from `witness_seal_timestamp` or
-    `witness_seal_state`) and the witness's public key (from
-    `witness_info`, cached once). This reconstructs the signing envelope
-    and checks the Ed25519 signature.
+    Easiest call: feed the fields from a `witness_seal_timestamp` /
+    `witness_seal_state` response straight in — its `verify_followup.params`
+    already lists exactly what to pass, including the witness public key.
+    This reconstructs the signing envelope and checks the Ed25519 signature.
 
     For timestamp seals: pass `target_block_hash_hex`.
     For state seals: pass `target_chain_id` and `target_chain_head_hex`.
+    The pre-0.6.2 seal-response field names (`target_block_hash`,
+    `target_chain_head`) are accepted as aliases, so a seal response piped
+    in verbatim verifies correctly.
 
-    Returns `valid: True/False`. This is the terminal verification step —
-    anyone with the seal + the witness public key can run it independently.
+    Returns `valid: True/False`. If the fields needed to rebuild the envelope
+    are missing, returns a structured `incomplete_verification_input` error —
+    NOT `valid: false` — because a missing target means the request was
+    under-specified, not that the seal is forged.
     """
     from datetime import datetime
 
@@ -198,21 +310,55 @@ def witness_verify_seal(
     from synpareia.seal.verify import verify_seal
     from synpareia.types import SealType
 
+    # Accept the seal-response field names verbatim (LR-6): coalesce the
+    # pre-0.6.2 aliases onto the canonical hex params. FastMCP drops unknown
+    # keys silently, so without declaring these a verbatim seal response would
+    # lose its target and verify against an empty envelope -> false "invalid".
+    target_block_hash_hex = target_block_hash_hex or target_block_hash
+    target_chain_head_hex = target_chain_head_hex or target_chain_head
+
+    # Distinguish "you didn't give me the target" from "the signature is bad".
+    # Returning valid:false for a missing target would wrongly impugn honest
+    # evidence — the worst error class for a trust tool (LR-6).
+    seal_type_lc = seal_type.lower() if isinstance(seal_type, str) else ""
+    if seal_type_lc == "timestamp" and not target_block_hash_hex:
+        return {
+            "error": "cannot verify: timestamp seal has no target_block_hash_hex",
+            "reason": "incomplete_verification_input",
+            "hint": (
+                "A timestamp seal is verified against the block hash it sealed. Pass "
+                "target_block_hash_hex — or feed the seal response's verify_followup.params."
+            ),
+        }
+    if seal_type_lc == "state" and (not target_chain_id or not target_chain_head_hex):
+        return {
+            "error": "cannot verify: state seal missing target_chain_id / target_chain_head_hex",
+            "reason": "incomplete_verification_input",
+            "hint": (
+                "A state seal is verified against (target_chain_id, target_chain_head_hex). "
+                "Pass both — or feed the seal response's verify_followup.params."
+            ),
+        }
+
     try:
         witness_public_key = base64.b64decode(witness_public_key_b64)
         witness_signature = base64.b64decode(witness_signature_b64)
 
-        target_block_hash = bytes.fromhex(target_block_hash_hex) if target_block_hash_hex else None
-        target_chain_head = bytes.fromhex(target_chain_head_hex) if target_chain_head_hex else None
+        target_block_hash_bytes = (
+            bytes.fromhex(target_block_hash_hex) if target_block_hash_hex else None
+        )
+        target_chain_head_bytes = (
+            bytes.fromhex(target_chain_head_hex) if target_chain_head_hex else None
+        )
 
         seal = SealPayload(
             witness_id=witness_id,
             witness_signature=witness_signature,
             seal_type=SealType(seal_type),
             sealed_at=datetime.fromisoformat(sealed_at),
-            target_block_hash=target_block_hash,
+            target_block_hash=target_block_hash_bytes,
             target_chain_id=target_chain_id,
-            target_chain_head=target_chain_head,
+            target_chain_head=target_chain_head_bytes,
         )
 
         valid, error = verify_seal(seal, witness_public_key)

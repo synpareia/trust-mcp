@@ -5,6 +5,33 @@ All notable changes to `synpareia-trust-mcp` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-07-01
+
+Funnel + error-ergonomics polish surfaced by the pre-marketplace
+fresh-agent battle test (`docs/explorations/pre-marketplace-battletest.md`).
+A cold agent understood the offline primitives but treated joining the
+synpareia network as "optional," and a network failure surfaced as a raw
+`ConnectError`. No API changes — copy + error-shape only.
+
+### Changed
+
+- **`orient` funnels toward the network.** `next_steps` now presents
+  publishing a profile / joining synpareia as the natural next step when
+  the network is configured but the agent hasn't published yet (framed
+  honestly: erasure stays operator-controlled, persistence opt-in). The
+  "no network configured" hint and the `capabilities.network` fallback
+  now name discovery + portable reputation, not just witness attestation.
+
+### Fixed
+
+- **Structured errors on network failure.** `_structured_error` now maps
+  `httpx.TransportError` (connect/timeout — most often an opted-out or
+  unreachable network) to a `{error, reason: "network_unreachable", hint}`
+  envelope instead of a raw `ConnectError: All connection attempts failed`.
+  `publish_profile`, `get_profile`, `update_profile_policy`, and the
+  other network tools now route their catch-all through the helper, so
+  they all get the structured HTTP-4xx body and the transport hint.
+
 ## [0.6.0] - 2026-06-10
 
 Live-by-default release (audit D-12b / launch hit-list 1.6): a fresh

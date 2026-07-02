@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "synpareia-trust-mcp"
-version = "0.6.0"
+version = "0.6.1"
 description = "Identity and trust tools for AI agents — MCP server"
 readme = "README.md"
 license = "Apache-2.0"
@@ -26,7 +26,9 @@ classifiers = [
 dependencies = [
     "synpareia[witness,profile]>=0.6.0",
     "mcp[cli]>=1.0",
-    "python-multipart>=0.0.27",  # security floor — CVE-2026-42561 (transitive via mcp)
+    "python-multipart>=0.0.30",  # security floor — CVE-2026-42561 (0.0.27) + CVE-2026-53538/53539 (0.0.28→fix 0.0.30, ~2026-06-19); transitive via mcp
+    "pyjwt>=2.13.0",  # security floor — PYSEC-2026-176/178/179 (2.12.1→fix 2.13.0, ~2026-06-19); transitive via mcp[cli]
+    "idna>=3.15",  # security floor — PYSEC-2026-215 (3.11→3.15)
 ]
 
 [project.optional-dependencies]
@@ -38,6 +40,10 @@ dev = [
     "hypothesis>=6.100",
     "bandit>=1.8",
     "fastapi>=0.115",
+    # Transitive via fastapi (dev/test only — not in the published wheel).
+    # >=1.3.1 closes CVE-2026-54282/54283 (~2026-06-19) so the dev-env audit
+    # stays clean.
+    "starlette>=1.3.1",
     "httpx>=0.27",
 ]
 

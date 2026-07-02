@@ -130,4 +130,4 @@ class TestEntryPoint:
         """Package metadata should be accessible."""
         import synpareia_trust_mcp
 
-        assert synpareia_trust_mcp.__version__ == "0.6.0"
+        assert synpareia_trust_mcp.__version__ == "0.6.1"

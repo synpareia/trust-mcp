@@ -5,6 +5,53 @@ All notable changes to `synpareia-trust-mcp` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-07-02
+
+Round-trip symmetry + truthful metadata, ahead of the MCP-marketplace listings
+(launch-review LR-6/7/13). No breaking changes — old field/param names still work.
+
+### Fixed
+
+- **Seal → verify no longer returns a false "seal invalid" (LR-6).**
+  `witness_seal_timestamp` returned the target under `target_block_hash` while
+  `witness_verify_seal`'s param was `target_block_hash_hex` (same for
+  `witness_seal_state` / `target_chain_head`). FastMCP's arg model is pydantic
+  `extra="ignore"`, so piping a seal response verbatim silently dropped the
+  target and verify rebuilt an empty envelope → `{"valid": false}` — wrongly
+  impugning a cryptographically sound seal. Now:
+  - seal responses expose the canonical `target_block_hash_hex` /
+    `target_chain_head_hex` (old names kept as aliases);
+  - `witness_verify_seal` accepts both names;
+  - a missing target returns a structured `incomplete_verification_input` error
+    (with a hint) instead of `valid: false` — "you under-specified the request"
+    is not "the seal is forged".
+- **`recording_end` → `witness_seal_state` and `witness_info` → `witness_verify_seal`
+  now pipe verbatim** — `recording_end` also emits `chain_head_hex`, `witness_info`
+  also emits `witness_public_key_b64`.
+- **`recording_start`** now echoes `counterparty_did` (matching its input param;
+  `counterparty` kept as an alias).
+- Bumped transitive **`pydantic-settings` 2.13.1 → 2.14.2** (GHSA-4xgf-cpjx-pc3j).
+
+### Added
+
+- **Self-describing seals.** `witness_seal_timestamp` / `witness_seal_state`
+  responses include a `verify_followup` block (mirroring `make_claim`'s
+  `witness_followup`) with the exact `witness_verify_seal` params — including the
+  witness public key — so a seal is verifiable by a third-party recipient with no
+  witness call and no field-name guesswork.
+- **Round-trip contract tests** (`tests/test_roundtrip_contracts.py`): every
+  output→successor pair is verified by piping the literal response into the
+  successor under FastMCP's drop-unknown-keys semantics. These fail on pre-0.6.2
+  code and would have caught LR-6.
+- `[project.urls]` now includes `Issues` and `Changelog` (LR-7).
+
+### Known / deferred (tracked)
+
+- Three lower-severity name mismatches remain, deferred because they are not clean
+  verbatim pipes (need small design calls): blind `party_*_commitment` →
+  `verify_claim.commitment_hash`, `remember_counterparty.namespace_id` →
+  `evaluate_agent.id`, and `verify_claim.agent_did` (no producer emits `agent_did`).
+
 ## [0.6.1] - 2026-07-01
 
 Funnel + error-ergonomics polish surfaced by the pre-marketplace

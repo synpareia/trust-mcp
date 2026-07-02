@@ -175,6 +175,7 @@ class TestWitnessErrors:
             witness_signature_b64=MALFORMED_B64,
             sealed_at="2026-01-01T00:00:00+00:00",
             witness_public_key_b64=MALFORMED_B64,
+            target_block_hash_hex="ab" * 32,  # present so we exercise the malformed-sig path
             ctx=ctx,
         )
         assert result["valid"] is False
@@ -189,6 +190,7 @@ class TestWitnessErrors:
             witness_signature_b64="AAAA",
             sealed_at="not-a-timestamp",
             witness_public_key_b64="AAAA",
+            target_block_hash_hex="ab" * 32,  # present so we exercise the bad-timestamp path
             ctx=ctx,
         )
         assert result["valid"] is False

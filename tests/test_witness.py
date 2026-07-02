@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime
 
 import synpareia
 from synpareia.seal import SealPayload, create_seal
@@ -16,6 +15,7 @@ from synpareia_trust_mcp.journal import JournalStore
 from synpareia_trust_mcp.profile import ProfileManager
 from synpareia_trust_mcp.tools.witness import (
     _require_witness,
+    witness_verify_seal,
 )
 
 
@@ -114,102 +114,67 @@ class TestVerifySealOffline:
         assert valid
         assert error is None
 
-    def test_verify_seal_offline_valid(self) -> None:
-        seal, public_key, block_hash = self._make_seal()
+    # These call the REAL witness_verify_seal tool (not a copy) so the tests track
+    # shipping behaviour — the divergent hand-copy that used to live here is exactly
+    # the seam LR-6 slipped through (it hand-bridged target_block_hash_hex). The
+    # tool is offline, so app_ctx (witness_client=None) is a sufficient context.
 
-        # Simulate what the MCP tool does
-        result = _verify_seal_offline_impl(
+    def test_verify_seal_offline_valid(self, app_ctx) -> None:
+        ctx, _ = app_ctx
+        seal, public_key, block_hash = self._make_seal()
+        result = witness_verify_seal(
             seal_type=str(seal.seal_type),
             witness_id=seal.witness_id,
             witness_signature_b64=base64.b64encode(seal.witness_signature).decode(),
             sealed_at=seal.sealed_at.isoformat(),
             witness_public_key_b64=base64.b64encode(public_key).decode(),
             target_block_hash_hex=block_hash.hex(),
+            ctx=ctx,
         )
         assert result["valid"] is True
 
-    def test_verify_seal_offline_wrong_key(self) -> None:
+    def test_verify_seal_offline_wrong_key(self, app_ctx) -> None:
+        ctx, _ = app_ctx
         seal, _, block_hash = self._make_seal()
         wrong_key = synpareia.generate().public_key
-
-        result = _verify_seal_offline_impl(
+        result = witness_verify_seal(
             seal_type=str(seal.seal_type),
             witness_id=seal.witness_id,
             witness_signature_b64=base64.b64encode(seal.witness_signature).decode(),
             sealed_at=seal.sealed_at.isoformat(),
             witness_public_key_b64=base64.b64encode(wrong_key).decode(),
             target_block_hash_hex=block_hash.hex(),
+            ctx=ctx,
         )
         assert result["valid"] is False
 
-    def test_verify_seal_offline_tampered_timestamp(self) -> None:
+    def test_verify_seal_offline_tampered_timestamp(self, app_ctx) -> None:
+        ctx, _ = app_ctx
         seal, public_key, block_hash = self._make_seal()
-
-        result = _verify_seal_offline_impl(
+        result = witness_verify_seal(
             seal_type=str(seal.seal_type),
             witness_id=seal.witness_id,
             witness_signature_b64=base64.b64encode(seal.witness_signature).decode(),
             sealed_at="2099-01-01T00:00:00+00:00",  # tampered
             witness_public_key_b64=base64.b64encode(public_key).decode(),
             target_block_hash_hex=block_hash.hex(),
+            ctx=ctx,
         )
         assert result["valid"] is False
 
-    def test_verify_seal_offline_invalid_inputs(self) -> None:
-        result = _verify_seal_offline_impl(
+    def test_verify_seal_offline_invalid_inputs(self, app_ctx) -> None:
+        ctx, _ = app_ctx
+        # Malformed sig/key WITH a target present, so we reach the crypto path
+        # (a missing target is a separate, structured incomplete-input case — see
+        # test_roundtrip_contracts.py::test_missing_target_reads_as_incomplete_not_invalid).
+        result = witness_verify_seal(
             seal_type="timestamp",
             witness_id="did:synpareia:fake",
             witness_signature_b64="not-valid-base64!!!",
             sealed_at="2026-01-01T00:00:00+00:00",
             witness_public_key_b64="also-not-valid!!!",
+            target_block_hash_hex="ab" * 32,
+            ctx=ctx,
         )
         assert result["valid"] is False
         assert "error" in result
-
-
-def _verify_seal_offline_impl(
-    seal_type: str,
-    witness_id: str,
-    witness_signature_b64: str,
-    sealed_at: str,
-    witness_public_key_b64: str,
-    target_block_hash_hex: str | None = None,
-    target_chain_id: str | None = None,
-    target_chain_head_hex: str | None = None,
-) -> dict:
-    """Call the witness_verify_seal logic without MCP context."""
-    from synpareia.seal import SealPayload
-    from synpareia.seal.verify import verify_seal
-    from synpareia.types import SealType
-
-    try:
-        witness_public_key = base64.b64decode(witness_public_key_b64)
-        witness_signature = base64.b64decode(witness_signature_b64)
-
-        target_block_hash = bytes.fromhex(target_block_hash_hex) if target_block_hash_hex else None
-        target_chain_head = bytes.fromhex(target_chain_head_hex) if target_chain_head_hex else None
-
-        seal = SealPayload(
-            witness_id=witness_id,
-            witness_signature=witness_signature,
-            seal_type=SealType(seal_type),
-            sealed_at=datetime.fromisoformat(sealed_at),
-            target_block_hash=target_block_hash,
-            target_chain_id=target_chain_id,
-            target_chain_head=target_chain_head,
-        )
-
-        valid, error = verify_seal(seal, witness_public_key)
-        return {
-            "valid": valid,
-            "seal_type": seal_type,
-            "witness_id": witness_id,
-            "error": error,
-            "explanation": (
-                "Seal signature is valid — the witness attested to this data."
-                if valid
-                else f"Seal verification failed: {error}"
-            ),
-        }
-    except Exception as e:
-        return {"valid": False, "error": str(e)}

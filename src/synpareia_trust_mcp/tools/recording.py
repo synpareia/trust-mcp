@@ -45,6 +45,9 @@ def recording_start(
         "recording_id": conv.conversation_id,
         "chain_id": conv.chain.id,
         "description": description,
+        # Canonical name — matches the counterparty_did input param (0.6.2, LR-6).
+        "counterparty_did": counterparty_did,
+        # Deprecated alias (pre-0.6.2 name).
         "counterparty": counterparty_did,
         "started_at": conv.started_at.isoformat(),
         "status": "recording",
@@ -108,6 +111,12 @@ def recording_end(
     except ValueError as e:
         return {"error": str(e)}
 
+    # Alias the finalized chain head under witness_seal_state's exact param name
+    # (0.6.2, LR-6) so a recording_end response pipes verbatim into
+    # witness_seal_state (its `chain_id` already matches). The pre-0.6.2 name
+    # `head_hash` is kept. This makes "seal the finished chain" a clean hop.
+    if isinstance(result, dict) and "head_hash" in result and "chain_head_hex" not in result:
+        result["chain_head_hex"] = result["head_hash"]
     return result
 
 

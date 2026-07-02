@@ -158,7 +158,9 @@ def orient(ctx: Context) -> dict[str, Any]:
             "network": network_capabilities
             if network_capabilities
             else [
-                "None configured — all features work offline. Set SYNPAREIA_WITNESS_URL for attestation."
+                "None configured — all trust primitives work offline. Set "
+                "SYNPAREIA_NETWORK_URL to join the synpareia network (discovery + "
+                "portable reputation), or SYNPAREIA_WITNESS_URL for third-party attestation."
             ],
         },
         "active_state": {
@@ -167,7 +169,7 @@ def orient(ctx: Context) -> dict[str, Any]:
         },
         "areas_of_concern": areas,
         "version": _get_version_info(),
-        "next_steps": _get_next_steps(config, active_conversations),
+        "next_steps": _get_next_steps(config, active_conversations, directory_state),
     }
 
 
@@ -255,21 +257,42 @@ def _read_directory_state(app: Any) -> dict[str, Any]:
     }
 
 
-def _get_next_steps(config: Any, active_conversations: list) -> list[str]:
+def _get_next_steps(
+    config: Any, active_conversations: list, directory_state: dict[str, Any]
+) -> list[str]:
     steps = []
+    published = bool(directory_state.get("published"))
     if not config.witness_url:
         steps.append(
             "Set SYNPAREIA_WITNESS_URL to enable witness attestation (third-party timestamps and blind conclusions)."
         )
     if not config.network_url:
-        steps.append("Set SYNPAREIA_NETWORK_URL to connect to the synpareia reputation network.")
+        steps.append(
+            "Set SYNPAREIA_NETWORK_URL to join the synpareia network: publish a "
+            "discoverable profile and build portable reputation that carries across "
+            "counterparties. The trust primitives work offline; the network is where "
+            "discovery and reputation live."
+        )
+    elif not published:
+        # Network reachable but the agent hasn't joined yet — the funnel
+        # step. Framed as the natural progression (local identity ->
+        # discoverable + reputation-building), honestly: erasure stays
+        # under the operator's control and persistence is opt-in, so
+        # this is an invitation, not a lock-in.
+        steps.append(
+            "You have a cryptographic identity but haven't joined the synpareia network "
+            "yet. Call publish_profile(name=...) to become discoverable and start "
+            "building portable reputation — the natural next step once your local "
+            "identity is set up. Erasure stays under your control; persistence is opt-in."
+        )
     if active_conversations:
         steps.append(
             f"You have {len(active_conversations)} active recording(s). Remember to end them when the interaction concludes."
         )
     if not steps:
         steps.append(
-            "Fully configured. Use evaluate_agent(namespace, id) to assess counterparties "
-            "across all four tiers, or make_claim to create verifiable statements."
+            "Set up and published. Grow your standing: make_claim(..., witness=True) to "
+            "create witnessed, reputation-bearing statements, and evaluate_agent(namespace, id) "
+            "to assess counterparties across all four tiers."
         )
     return steps

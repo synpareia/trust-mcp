@@ -119,8 +119,11 @@ def _structured_error(exc: BaseException) -> dict[str, Any]:
     Preserves the directory's structured 4xx body (notably the
     ``{detail, code, scope}`` envelope returned for the
     ``persistence_opt_in`` 403) so MCP callers can distinguish a
-    policy block from a transport failure. Falls back to
-    ``{"error": "<class>: <repr>"}`` for non-HTTP errors.
+    policy block from a transport failure. Transport failures
+    (connect/timeout — most often an opted-out or unreachable
+    network) become a ``{error, reason: "network_unreachable", hint}``
+    envelope so agents get guidance instead of a raw ``ConnectError``.
+    Falls back to ``{"error": "<class>: <repr>"}`` for anything else.
     """
     import httpx
 
@@ -147,6 +150,22 @@ def _structured_error(exc: BaseException) -> dict[str, Any]:
             elif isinstance(body.get("detail"), str):
                 out["detail"] = body["detail"]
         return out
+    if isinstance(exc, httpx.TransportError):
+        # ConnectError / ConnectTimeout / ReadTimeout / network failures.
+        # In practice the dominant cause is an opted-out or unreachable
+        # network (offline / isolated), so surface that as guidance rather
+        # than a raw "ConnectError: All connection attempts failed" the
+        # caller has to decode. Distinct from a directory HTTP error above.
+        return {
+            "error": "could not reach the synpareia network",
+            "reason": "network_unreachable",
+            "hint": (
+                "The directory could not be reached. If you're offline or "
+                "network-isolated this is expected — set SYNPAREIA_NETWORK_URL='off' "
+                "to work fully locally. Otherwise check connectivity and retry; a "
+                "cold-started service can take a few seconds to answer its first request."
+            ),
+        }
     return {"error": f"{type(exc).__name__}: {exc}"}
 
 
@@ -345,7 +364,7 @@ async def publish_profile(
     try:
         return await _publish_shape(app, shape)
     except Exception as exc:  # noqa: BLE001 — surface errors as structured tool output
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return _structured_error(exc)
 
 
 @mcp.tool()
@@ -364,7 +383,7 @@ async def get_profile(did: str, ctx: Context) -> dict[str, Any]:
         async with _build_profile_client(app) as client:
             return await client.get_existence(did=did)
     except Exception as exc:  # noqa: BLE001
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return _structured_error(exc)
 
 
 @mcp.tool()
@@ -428,7 +447,7 @@ async def update_profile_policy(
     try:
         return await _publish_shape(app, shape)
     except Exception as exc:  # noqa: BLE001
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return _structured_error(exc)
 
 
 @mcp.tool()
@@ -477,7 +496,7 @@ async def enable_persistence(scope: list[str], ctx: Context) -> dict[str, Any]:
     try:
         return await _publish_shape(app, shape)
     except Exception as exc:  # noqa: BLE001
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return _structured_error(exc)
 
 
 @mcp.tool()
@@ -506,7 +525,7 @@ async def disable_persistence(ctx: Context) -> dict[str, Any]:
     try:
         return await _publish_shape(app, shape)
     except Exception as exc:  # noqa: BLE001
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return _structured_error(exc)
 
 
 @mcp.tool()

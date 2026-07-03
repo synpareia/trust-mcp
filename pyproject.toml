@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "synpareia-trust-mcp"
-version = "0.6.2"
-description = "Identity and trust tools for AI agents — MCP server"
+version = "0.6.3"
+description = "Trust tools for agent-to-agent dealings — prove, vet, and bind with verifiable evidence (MCP server)"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"

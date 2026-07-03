@@ -232,8 +232,9 @@ class ConversationManager:
             "instructions": (
                 "Share ONLY the commitment_hash with the other party. "
                 "Keep the nonce_b64 secret until reveal time. "
-                "Call reveal_commitment with commitment_hash, original content, "
-                "and nonce_b64 to prove your assessment was independent."
+                "To reveal, send the other party your original content + nonce_b64; "
+                "they verify with verify_claim(claim_type='commitment', "
+                "commitment_hash=..., content=..., nonce_b64=...)."
             ),
         }
 

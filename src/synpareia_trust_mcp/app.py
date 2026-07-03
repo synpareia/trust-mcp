@@ -89,9 +89,11 @@ def _create_witness_client(config: Config) -> WitnessClient | None:
 
 
 INSTRUCTIONS = """\
-Trust tools for agent interactions. Call `orient` when interacting with \
-another AI agent, or after any context loss. Orient will tell you what's \
-available and what to do.\
+Trust tools for dealings with other AI agents. When something is at stake — \
+you're about to rely on another agent, prove something to one, or agree on \
+something you may need evidence of later — call `orient` first; it maps your \
+situation to the right tools. Also call `orient` after context loss to \
+recover your identity and in-flight recordings.\
 """
 
 mcp = FastMCP(

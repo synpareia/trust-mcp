@@ -55,6 +55,7 @@ async def evaluate_agent(
     ctx: Context,
     namespace: str | None = None,
     id: str | None = None,  # noqa: A002 -- matches the spec in counterparty-reputation.md
+    namespace_id: str | None = None,
     identifier: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate a counterparty across every configured tier.
@@ -63,6 +64,10 @@ async def evaluate_agent(
     platform / context ("synpareia", "moltbook", "slack", "discord",
     "email", ...); `id` is the identifier within that namespace (a DID,
     handle, username, or local record id).
+
+    `id` may also be passed as ``namespace_id`` — that is the field name
+    ``remember_counterparty`` emits, so a Tier-1 record pipes straight into
+    this call without renaming (round-trip audit, task #40).
 
     The legacy ``identifier=...`` form still works for one release and
     emits a `deprecation` flag on the response. It will be removed in
@@ -73,7 +78,17 @@ async def evaluate_agent(
     mean "no evidence at this tier" (never an error). An agent reads
     the structured result and decides how to weight each tier.
     """
+    # `namespace_id` is remember_counterparty's field name for the same value.
+    id = id or namespace_id
     deprecation: str | None = None
+    # NOTE (round-trip collision, PR #301 review): an AgentRecord.to_dict() also
+    # carries a field named `identifier` (its local id, e.g. "local:<uuid>"), which
+    # binds to the legacy `identifier=` param when a record is piped straight in.
+    # That's inert ONLY because this legacy branch requires BOTH namespace and id
+    # to be None — and a Tier-1 record always carries `namespace`, so the branch is
+    # skipped and the stray `identifier` is ignored. Do NOT loosen this guard to
+    # `id is None` alone: a piped record's local `identifier` would then override
+    # the intended (namespace, namespace_id) routing via _infer_namespace.
     if namespace is None and id is None:
         if identifier is None:
             return {

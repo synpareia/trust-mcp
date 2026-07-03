@@ -138,18 +138,14 @@ Pass these directly to another agent, or read the manual field for human operato
 Creating tamper-evident records of interactions as hash-linked chains. Each message \
 becomes a signed block; the chain proves ordering and integrity.
 
-## Three recording modes
+## How recording works
 
-**Explicit recording:** You decide to record a specific interaction. Call \
-recording_start to begin, recording_append for each event, recording_end to \
-finalize. Use for: high-stakes interactions where you want a verifiable record.
-
-**Per-channel recording:** Configure automatic recording for specific communication \
-channels. Blocks are appended as messages flow. Use for: monitoring a specific \
-integration or communication path.
-
-**Retrospective chain building:** Build a verifiable chain from existing conversation \
-history after the fact. Use for: compliance/audit needs.
+You record a specific interaction explicitly: call `recording_start` to begin, \
+`recording_append` for each event, and `recording_end` to finalize it into a \
+tamper-evident, hash-linked chain. Use it for high-stakes interactions where you \
+want a verifiable record. Recording is always explicit — there is no automatic \
+per-channel capture and no retrospective chain-building, so you control exactly \
+what gets attested.
 
 ## Consent requirement
 Before recording any interaction, ask for permission unless recording is clearly \
@@ -359,8 +355,10 @@ configured for. Proceed with appropriate caution.\
 # Setup & Configuration
 
 ## What this is about
-Configuring optional features to expand beyond offline-only operation. The toolkit \
-works with zero configuration; each variable adds capabilities.
+Tuning the toolkit's configuration. It works with zero configuration: since 0.6 the \
+witness and network endpoints default to the live synpareia services, so attestation, \
+reputation, and discovery work out of the box — and everything cryptographic also \
+verifies fully offline. Each variable below customises or disables a capability.
 
 ## Configuration variables
 
@@ -369,27 +367,33 @@ works with zero configuration; each variable adds capabilities.
 | SYNPAREIA_DATA_DIR | Storage location (default: ~/.synpareia) |
 | SYNPAREIA_DISPLAY_NAME | Human-readable name for your agent |
 | SYNPAREIA_PRIVATE_KEY_B64 | Import an existing Ed25519 private key |
-| SYNPAREIA_WITNESS_URL | Witness service for timestamps, seals, blind conclusions |
-| SYNPAREIA_WITNESS_TOKEN | Auth token for the witness service |
-| SYNPAREIA_NETWORK_URL | Synpareia network for reputation and discovery |
+| SYNPAREIA_WITNESS_URL | Witness service for timestamps, seals, blind conclusions (default: the live synpareia witness; set to `none` to disable) |
+| SYNPAREIA_WITNESS_TOKEN | Auth token for the witness service (public reference witness needs none) |
+| SYNPAREIA_NETWORK_URL | Synpareia network for reputation and discovery (default: the live synpareia network; set to `none` to disable) |
 | SYNPAREIA_AUTO_REGISTER | Auto-register profile on network (default: false, requires explicit opt-in) |
 | SYNPAREIA_MOLTBOOK_API_URL | Moltbook API for agent social reputation lookups |
 | SYNPAREIA_MOLTRUST_API_KEY | MolTrust API key for W3C DID reputation lookups |
 
-## Progression
-1. **Zero config:** Identity, signing, conversations, commitments. Everything offline.
-2. **+ Witness:** Timestamp seals, state seals, blind conclusions. Third-party attestation.
-3. **+ Network:** Reputation queries, agent discovery, network registration.
-4. **+ External providers:** Multi-source reputation lookups (Moltbook, MolTrust).
+## The default state
+A fresh install has identity, signing, recordings, and commitments (all local), plus \
+witness attestation and network reputation/discovery via the live synpareia services. \
+Nothing is published or sent anywhere until you invoke a network-touching tool — \
+joining the directory is always an explicit `publish_profile` call.
+
+From there, configuration moves in two directions:
+- **Opt out:** set SYNPAREIA_NETWORK_URL / SYNPAREIA_WITNESS_URL to `none` for \
+fully-local operation. Everything already signed or sealed remains verifiable offline.
+- **Extend:** add external reputation providers (Moltbook, MolTrust) or point the \
+URLs at self-hosted instances.
 
 ## Setting configuration
 For MCP servers: set environment variables in your MCP config file.
 For CLI: set in your shell environment or .env file.
 For SDK: pass to the constructor or set in environment.
 
-## Missing configuration is not an error
-Unconfigured services simply aren't available. Orient shows what's configured and \
-what each addition would enable. The agent decides which services are worth setting up \
+## Disabled configuration is not an error
+Disabled or unconfigured services simply aren't available. Orient shows what's active \
+and what each change would enable. The agent decides which services are worth having \
 based on its needs.\
 """,
     "identity-lifecycle": """\
@@ -433,5 +437,38 @@ whoever rotated first wins. This is why key security matters.
 Profile data is stored in {data_dir}/profile.json with mode 0600 (owner read/write \
 only). The private key is base64-encoded. Back up this file. Losing it means \
 losing the identity — there is no recovery mechanism for lost keys.\
+""",
+    "under-the-hood": """\
+# Under the Hood — the synpareia SDK
+
+## What this is about
+These tools are a thin layer over `synpareia`, an open Python SDK of cryptographic \
+primitives (PyPI: `pip install synpareia`; witness client via `synpareia[witness]`). \
+This page maps each tool family to its primitive, and names when to graduate to the \
+SDK. It is a signpost, not a curriculum — the SDK has its own documentation.
+
+## Tool -> primitive map
+
+| Tool family | SDK primitive |
+|-------------|---------------|
+| make_claim / verify_claim (signatures) | `synpareia.sign` / `synpareia.verify` (Ed25519) |
+| verify_claim (identity) | `synpareia.from_public_key` — DID = did:synpareia:<SHA-256(public_key) hex> |
+| prove_independence / verify_claim (commitment) | `synpareia.create_commitment` / `synpareia.verify_commitment` (hash + nonce, seal-then-reveal) |
+| recording_* | `synpareia.Block` / `synpareia.Chain` — signed, hash-linked blocks; `export_chain` / `verify_export` for portable proofs |
+| encode_signed / decode_signed | `synpareia.hash.jcs_canonicalize` + `sign` over a self-contained JSON envelope |
+| witness_* | `synpareia.witness.client.WitnessClient`; seals verify offline via `synpareia.verify_seal` |
+
+Every proof this toolkit produces is verifiable with the SDK alone — a counterparty \
+never needs this MCP server (or the synpareia network) to check your claims.
+
+## When to graduate to the SDK
+You need the SDK when you want to:
+- Define custom chain schemas or block types for your own domain
+- Embed verification inside your own service (verify envelopes/exports server-side)
+- Do batch or high-volume operations where per-tool-call overhead matters
+- Build offline-first architecture with your own key and storage management
+
+You stay on the MCP when you're an agent handling a counterparty situation — \
+proving, vetting, or binding in the moment. That's what this surface is for.\
 """,
 }

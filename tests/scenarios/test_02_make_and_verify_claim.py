@@ -126,7 +126,7 @@ class TestMakeAndVerifyClaim:
         claim = make_claim(content="x", ctx=ctx, witness=True)
         assert "witness_followup" in claim
         assert claim["witness_followup"]["tool"] is None
-        assert "not configured" in claim["witness_followup"]["message"].lower()
+        assert "disabled by configuration" in claim["witness_followup"]["message"].lower()
 
     def test_witness_followup_directs_to_seal_tool_with_block_hash(self, app_ctx) -> None:
         """When witness IS configured, the followup block tells the agent

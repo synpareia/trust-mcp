@@ -81,3 +81,54 @@ class TestOrientAndDiscover:
         result = orient(ctx)
         assert "next_steps" in result
         assert isinstance(result["next_steps"], list)
+
+    def test_orient_leads_with_start_here_situation_map(self, app_ctx) -> None:
+        """Orient is called in the moment — the situation routing must come
+        before the inventory (0.6.3 positioning; strategy review 2026-07-03)."""
+        ctx, _ = app_ctx
+        result = orient(ctx)
+        assert "start_here" in result
+        # First key in the return dict — the moment before the inventory.
+        assert next(iter(result)) == "start_here"
+        start_here = result["start_here"]
+        assert isinstance(start_here, dict) and len(start_here) >= 5
+        joined = " ".join(start_here.values()).lower()
+        # Each of the three positioning verbs is reachable from the map.
+        for tool in (
+            "verify_claim",
+            "evaluate_agent",
+            "recording_start",
+            "make_claim",
+            "prove_independence",
+            "publish_profile",
+        ):
+            assert tool in joined, f"start_here map doesn't route to {tool}"
+
+    def test_under_the_hood_guide_names_only_real_sdk_symbols(self) -> None:
+        """The learn('under-the-hood') tool->primitive map cites SDK symbols by
+        name. If any drifts, an SDK-graduating agent gets routed to a
+        nonexistent import. Pin every named symbol to a live import (the
+        forms-coverage 'body claims vs SDK shapes' check, applied here).
+        Review catch, PR #307 coverage perspective."""
+        import importlib
+
+        guide = learn(area="under-the-hood")["guide"]
+        synpareia = importlib.import_module("synpareia")
+        # Top-level symbols the guide names explicitly.
+        for sym in (
+            "sign",
+            "verify",
+            "from_public_key",
+            "create_commitment",
+            "verify_commitment",
+            "Block",
+            "Chain",
+            "export_chain",
+            "verify_export",
+        ):
+            assert sym in guide, f"guide no longer names {sym} — update this pin"
+            assert hasattr(synpareia, sym), f"guide names synpareia.{sym} but it does not exist"
+        # Submodule paths the guide names.
+        assert hasattr(importlib.import_module("synpareia.hash"), "jcs_canonicalize")
+        assert hasattr(importlib.import_module("synpareia.witness.client"), "WitnessClient")
+        assert hasattr(importlib.import_module("synpareia.seal.verify"), "verify_seal")

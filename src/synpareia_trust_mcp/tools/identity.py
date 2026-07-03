@@ -81,9 +81,10 @@ def make_claim(
         result["witness_followup"] = {
             "tool": None,
             "message": (
-                "Witness not configured. Claim is signed but not witness-attested. "
-                "Set SYNPAREIA_WITNESS_URL (and optionally SYNPAREIA_WITNESS_TOKEN) "
-                "to enable witness seals."
+                "Witness attestation is disabled by configuration "
+                "(SYNPAREIA_WITNESS_URL). The claim is signed but not "
+                "witness-attested. Re-enable the witness (and optionally set "
+                "SYNPAREIA_WITNESS_TOKEN) to add timestamp seals."
             ),
         }
 
@@ -98,6 +99,7 @@ def verify_claim(
     signature_b64: str | None = None,
     public_key_b64: str | None = None,
     agent_did: str | None = None,
+    did: str | None = None,
     commitment_hash: str | None = None,
     nonce_b64: str | None = None,
 ) -> dict[str, Any]:
@@ -105,7 +107,15 @@ def verify_claim(
 
     Types: 'signature' (content+sig+key), 'identity' (did+key),
     'commitment' (hash+content+nonce).
+
+    For 'identity', the DID may be passed as either ``agent_did`` (canonical)
+    or ``did`` — every identity producer (orient, publish_profile, get_profile,
+    the directory) emits its DID under the field name ``did``, so accepting
+    that alias lets an identity block ``{did, public_key_b64}`` pipe straight
+    in without the caller renaming a field (round-trip audit, task #40).
     """
+    # Accept the producer field name `did` as an alias for `agent_did`.
+    agent_did = agent_did or did
     if claim_type == "signature":
         return _verify_signature(content, signature_b64, public_key_b64)
     elif claim_type == "identity":

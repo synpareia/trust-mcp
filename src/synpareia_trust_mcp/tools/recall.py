@@ -43,9 +43,10 @@ def remember_counterparty(
     `display_name` accumulates into a history (current name is last in the
     list; previous names remain searchable via `recall_counterparty`).
 
-    `custom_fields` is a free-form dict of hints. See `learn("disambiguation")`
-    for suggested vocabulary per namespace. Nested dicts are rejected;
-    primitive values only (strings, numbers, booleans, lists of primitives).
+    `custom_fields` is a free-form dict of hints — use your own consistent
+    vocabulary per namespace (e.g. `role`, `org`, `first_seen`). Nested dicts
+    are rejected; primitive values only (strings, numbers, booleans, lists of
+    primitives).
 
     Returns the record dict including the local `identifier` (e.g.
     `local:<uuid4>`) — pass that identifier to `add_evaluation` or
@@ -150,8 +151,8 @@ def find_evaluations(
 
     Useful patterns: `find_evaluations("missed_deadline")`,
     `find_evaluations("shipped_on_time")`, `find_evaluations("unreliable")`.
-    Tag vocabulary is agent-convention; see `learn("disambiguation")` for
-    suggestions.
+    Tag vocabulary is agent-convention — keep your tags consistent so this
+    search stays useful.
     """
     app: AppContext = ctx.request_context.lifespan_context
     raw = app.journal_store.find_evaluations(tag)

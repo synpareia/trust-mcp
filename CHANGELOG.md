@@ -5,6 +5,65 @@ All notable changes to `synpareia-trust-mcp` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-07-03
+
+Positioning + copy release ahead of the MCP-marketplace listings, and the first
+release to carry the post-0.6.2 round-trip and copy fixes (#301, #305) that
+landed on `master` after 0.6.2 shipped. Still no *behaviour* change to any
+cryptographic or network operation; the 32-tool set is unchanged, and the two
+parameters added in #301 are backward-compatible aliases (old field names still
+work).
+
+### Fixed
+
+- **Closed the three round-trip name mismatches that 0.6.2 listed as deferred
+  (#301, task #40a).** `verify_claim` now accepts `did` as an alias for
+  `agent_did`, and `evaluate_agent` accepts `namespace_id` as an alias for `id`,
+  so an identity/lookup block pipes straight in without renaming fields. The
+  `witness_submit_blind` / `seal_commitment` instructions were also redirected
+  from a phantom `reveal_commitment` (never a registered tool) to the real
+  `verify_claim(claim_type='commitment', ...)`. Added round-trip contract tests.
+- **Corrected four agent-facing references to things that don't exist (#305).**
+  `encode_signed`'s witnessed-assurance hint (`assurance='witnessed'` →
+  `make_claim(content, witness=True)`); dead `learn("disambiguation")` pointers
+  in the counterparty tools; fictional "per-channel recording" / "retrospective
+  chain building" modes in the recording guide; and a stale `forget_counterparty`
+  "v0.5 roadmap" note in the README.
+
+### Changed
+
+- **Positioning: prove / vet / bind.** All discovery and in-context copy now
+  leads with the situations the toolkit is for — *prove what you did, vet who
+  you're dealing with, bind agreements so anyone can check them* — instead of
+  a primitive catalogue. Rewritten: README opening, `pyproject` description,
+  server `INSTRUCTIONS` (now stakes-triggered, not "when interacting with
+  another AI agent"), and the `orient` docstring.
+- **`orient` now returns a `start_here` situation map first** — seven
+  common situations ("another agent claimed something", "about to rely on
+  another agent", …) each mapped to the tools that handle them. The inventory
+  (identity, services, capabilities, areas) follows.
+- **Offline copy reconciled with network-on defaults (since 0.6).** Offline
+  verification is now framed as a guarantee ("everything verifies offline,
+  forever"), not the value proposition. The `setup` guide's "Progression"
+  ladder (zero-config → +witness → +network) is replaced by the actual
+  default state (live services on, nothing published implicitly) plus the
+  two real directions: opt out (`none`) or extend/self-host. `orient`'s
+  no-network fallback and next-steps texts now acknowledge an explicit
+  opt-out instead of narrating an unset default.
+- **Network-join funnel copy (unpublished + network on):** names the concrete
+  value — a counterparty who has never met you can independently verify your
+  identity and witnessed history — while keeping the ratified honesty framing
+  (offline keeps working, persistence opt-in, erasure under your control, no
+  reachability promise).
+
+### Added
+
+- **`learn("under-the-hood")`** — the MCP↔SDK boundary signpost: a tool
+  family → SDK primitive map (`make_claim` → `synpareia.sign`,
+  `recording_*` → `Block`/`Chain`, `witness_*` → `WitnessClient`, …) and
+  graduation criteria for when to build on the `synpareia` SDK directly.
+  Also listed as an `orient` area of concern.
+
 ## [0.6.2] - 2026-07-02
 
 Round-trip symmetry + truthful metadata, ahead of the MCP-marketplace listings

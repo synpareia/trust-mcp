@@ -1,23 +1,14 @@
 # Synpareia Trust Toolkit
 
-Identity and trust tools for AI agents. One install. Zero friction.
+Verifiable dealings with other agents: **prove** what you did, **vet** who you're dealing with, and **bind** agreements so anyone can check them — no platform trust required.
 
-Your agent gets a cryptographic identity, tools to verify other agents, and a tamper-evident interaction log — all working locally. Connect to the synpareia network for reputation, discovery, and selective disclosure.
+An MCP server that gives your agent a cryptographic identity and the trust tools for the moments when something is at stake with another agent:
 
-## What You Get
+- **About to rely on another agent?** Vet them first — `evaluate_agent` aggregates your own history with them, attested network reputation, and external providers into one read.
+- **In an interaction you may need to prove your side of later?** `recording_start` opens a tamper-evident, hash-linked record both parties can contribute to; export a portable proof anyone can verify.
+- **Two agents assessing something that must be provably independent?** `prove_independence` seals each assessment before either side reveals — no anchoring, no retconning.
 
-**Day one, no network needed:**
-
-- **Cryptographic identity** — your agent gets a DID and Ed25519 keypair, persistent across sessions
-- **Signing and verification** — prove authorship, verify claims from other agents
-- **Verified conversations** — tamper-evident interaction records that both parties contribute to
-- **Sealed commitments** — prove your assessment was made before seeing the other party's
-
-**With the synpareia network:**
-
-- **Discovery** — find trustworthy agents by capability, reputation, or criteria
-- **Reputation** — build and check track records that persist across interactions
-- **Selective disclosure** — control exactly what others see about your agent
+Everything your agent signs, records, or seals **verifies offline, forever** — proofs are pure cryptography and don't depend on synpareia staying up. The synpareia network (on by default) adds what local crypto can't: discovery, and reputation that carries across counterparties.
 
 ## Install
 
@@ -45,11 +36,11 @@ synpareia-trust-mcp
 
 ## Tools
 
-32 tools across 10 areas. Start by calling `orient` — it summarises every area and points you to the relevant `learn` topic.
+Start by calling `orient` — it maps your situation to the right tools and points you to the relevant `learn` guide. The full surface:
 
 | Tool | What it does | Offline? |
 |------|-------------|:-------:|
-| `orient` | Discover all capabilities and which area fits your goal | Yes |
+| `orient` | Map your situation to the right tools; call after any context loss | Yes |
 | `learn` | Get a focused guide for one area (usage, examples, pitfalls) | Yes |
 | `make_claim` | Sign content with your private key — proves authorship | Yes |
 | `verify_claim` | Verify another agent's signature, commitment, or identity claim | Yes |
@@ -97,6 +88,8 @@ The Trust Toolkit is built on [synpareia](https://pypi.org/project/synpareia/) �
 **Trust builds over time.** Each verified conversation adds to your agent's reputation. The more agents that participate, the more meaningful reputation becomes.
 
 **Privacy by default.** Selective disclosure means your agent controls exactly what's visible, and to whom.
+
+**Want to build with the primitives rather than use the tools?** That's the [synpareia SDK](https://pypi.org/project/synpareia/) — custom chain schemas, embedded verification in your own service, batch operations. Call `learn("under-the-hood")` for the tool→primitive map and graduation criteria.
 
 ## Example Scenarios
 
@@ -206,17 +199,21 @@ What flows off-machine (only when the corresponding tool is invoked):
 - **Witness service** — the `witness_*` tools talk to the configured witness
   (the live synpareia witness by default; opt out with
   `SYNPAREIA_WITNESS_URL=none`) to obtain timestamp seals. The witness only sees
-  hashes and signatures, never your content. The current synpareia witness is
-  sparse-witness (Position 4): it does not persist `requester_id`, so the
-  attestation is not linkable to your identity beyond what you re-link
-  yourself.
+  hashes and signatures, never your content. For **timestamp and state seals**
+  the current synpareia witness is sparse-witness (Position 4): it does not
+  persist `requester_id`, so the seal is not linkable to your identity beyond
+  what you re-link yourself. **Exception — blind conclusions:**
+  `witness_submit_blind` submits a self-asserted party DID, which the witness
+  *does* retain (as `party_a_id`/`party_b_id`, and on the underlying seals) so
+  the two parties can later be matched at reveal. If unlinkability matters for a
+  blind conclusion, submit under a throwaway identity.
 
 Subject-rights / GDPR notes (where the GDPR applies to your agent's
 operations):
 
 - All journal data lives on the data subject's own machine. Erasure is
-  achieved by deleting the relevant record (`forget_counterparty` is on the
-  v0.5 roadmap; today, edit `counterparties.json` directly).
+  achieved by deleting the relevant record — there is no `forget_counterparty`
+  tool yet; today, edit `counterparties.json` directly.
 - The toolkit imposes no retention period — observations persist until you
   delete them. If your operating environment requires a maximum retention,
   enforce it externally.
@@ -234,3 +231,5 @@ This is not legal advice; review with counsel for your specific deployment.
 ## License
 
 Apache 2.0
+
+<!-- mcp-name: io.github.synpareia/trust-mcp -->

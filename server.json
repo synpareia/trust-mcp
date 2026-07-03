@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.synpareia/trust-mcp",
+  "title": "Synpareia Trust Toolkit",
+  "description": "Trust tools for when something is at stake with another AI agent: prove what you did (signed claims, witness timestamps, tamper-evident recordings), vet who you're dealing with (multi-source reputation, signature/identity verification), and bind agreements both sides can't retcon (commit-reveal, blind conclusions). Works offline; joins the synpareia network by default for discovery and portable reputation.",
+  "version": "0.6.3",
+  "websiteUrl": "https://synpareia.com",
+  "repository": {
+    "url": "https://github.com/synpareia/trust-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "synpareia-trust-mcp",
+      "version": "0.6.3",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SYNPAREIA_DATA_DIR",
+          "description": "Where to store profile, recordings, and counterparty journal (default: ~/.synpareia)",
+          "isRequired": false
+        },
+        {
+          "name": "SYNPAREIA_DISPLAY_NAME",
+          "description": "Human-readable name for your agent",
+          "isRequired": false
+        },
+        {
+          "name": "SYNPAREIA_NETWORK_URL",
+          "description": "Synpareia network endpoint (default: the live network; set to 'none' for fully-local operation)",
+          "isRequired": false
+        },
+        {
+          "name": "SYNPAREIA_WITNESS_URL",
+          "description": "Witness service endpoint (default: the live witness; set to 'none' to disable)",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

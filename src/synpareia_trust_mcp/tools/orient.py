@@ -70,12 +70,18 @@ AREAS_OF_CONCERN = [
         "brief": "Key rotation, compromise recovery, identity continuity.",
         "when": "Key compromise, security policy rotation, or orient flags an aging keypair.",
     },
+    {
+        "area": "under-the-hood",
+        "name": "Under the Hood (the synpareia SDK)",
+        "brief": "How these tools map to the underlying cryptographic primitives, and when to graduate to the SDK.",
+        "when": "You want to build with the primitives rather than use the tools — custom chain schemas, embedded verification in your own service, batch operations.",
+    },
 ]
 
 
 @mcp.tool()
 def orient(ctx: Context) -> dict[str, Any]:
-    """Get your identity, configuration status, and available trust capabilities. Call this when interacting with another AI agent or after any context loss."""
+    """Map your situation to the right trust tools. Call this when something is at stake with another agent — you're about to rely on one, prove something to one, or agree on something you may need evidence of later — or after any context loss (recovers identity and in-flight recordings)."""
     app: AppContext = ctx.request_context.lifespan_context
 
     profile_data = app.profile_manager.get_profile_data()
@@ -150,7 +156,37 @@ def orient(ctx: Context) -> dict[str, Any]:
             }
         )
 
+    # Situation map FIRST: orient is called in the moment ("Rourke just
+    # asked me to co-review a contract"), so the routing serves the moment
+    # before the inventory. Keys are situations, values are the tools.
+    start_here = {
+        "another agent claimed something": (
+            "verify_claim (signature / identity / commitment) or decode_signed "
+            "(self-verifying envelope)"
+        ),
+        "about to rely on another agent": (
+            "recall_counterparty (your own history) + evaluate_agent (multi-source reputation)"
+        ),
+        "need to prove your side of an interaction later": (
+            "recording_start -> recording_append per exchange -> recording_end -> recording_proof"
+        ),
+        "need to prove authorship, or that you knew something by a time": (
+            "make_claim (witness=True returns a witness_seal_timestamp "
+            "follow-up for an independent timestamp seal)"
+        ),
+        "mutual assessment that must be provably independent": (
+            "prove_independence (commit-reveal), optionally via witness_submit_blind"
+        ),
+        "want strangers to be able to verify who you are": (
+            "publish_profile (directory card) + make_claim(witness=True) for witnessed history"
+        ),
+        "lost context / fresh session": (
+            "you're in the right place — identity, services, and any in-flight recordings are below"
+        ),
+    }
+
     return {
+        "start_here": start_here,
         "identity": identity,
         "services": services,
         "capabilities": {
@@ -158,9 +194,14 @@ def orient(ctx: Context) -> dict[str, Any]:
             "network": network_capabilities
             if network_capabilities
             else [
-                "None configured — all trust primitives work offline. Set "
-                "SYNPAREIA_NETWORK_URL to join the synpareia network (discovery + "
-                "portable reputation), or SYNPAREIA_WITNESS_URL for third-party attestation."
+                # Since 0.6 the network + witness URLs default ON, so this
+                # branch is only reachable when the operator explicitly
+                # disabled them — say that, rather than reading like an
+                # unset default.
+                "Network services disabled by configuration. All trust "
+                "primitives keep working offline. Unset SYNPAREIA_NETWORK_URL / "
+                "SYNPAREIA_WITNESS_URL (or set them to a URL) to re-enable "
+                "discovery, portable reputation, and third-party attestation."
             ],
         },
         "active_state": {
@@ -175,7 +216,7 @@ def orient(ctx: Context) -> dict[str, Any]:
 
 @mcp.tool()
 def learn(area: str) -> dict[str, Any]:
-    """Load a detailed guide for a specific area of concern. Areas: trust-networks, verification, claims, recording, witness-attestation, counterparty, reasoning, looking-up, setup, identity-lifecycle."""
+    """Load a detailed guide for a specific area of concern. Areas: trust-networks, verification, claims, recording, witness-attestation, counterparty, reasoning, looking-up, setup, identity-lifecycle, under-the-hood."""
     guide = AREA_GUIDES.get(area)
     if guide is None:
         available = sorted(AREA_GUIDES.keys())
@@ -263,27 +304,46 @@ def _get_next_steps(
     steps = []
     published = bool(directory_state.get("published"))
     if not config.witness_url:
+        # Like the network branch below: only reachable via an explicit
+        # SYNPAREIA_WITNESS_URL=none opt-out — the live witness has been
+        # the default since 0.6.
         steps.append(
-            "Set SYNPAREIA_WITNESS_URL to enable witness attestation (third-party timestamps and blind conclusions)."
+            "Witness attestation is disabled by configuration "
+            "(SYNPAREIA_WITNESS_URL). The trust primitives keep working offline; "
+            "re-enabling adds independent timestamp seals and blind conclusions."
         )
     if not config.network_url:
+        # Only reachable when the operator explicitly set
+        # SYNPAREIA_NETWORK_URL=none — the default has been the live
+        # network since 0.6. Acknowledge the opt-out instead of narrating
+        # an unset default.
         steps.append(
-            "Set SYNPAREIA_NETWORK_URL to join the synpareia network: publish a "
-            "discoverable profile and build portable reputation that carries across "
-            "counterparties. The trust primitives work offline; the network is where "
-            "discovery and reputation live."
+            "The synpareia network is disabled by configuration "
+            "(SYNPAREIA_NETWORK_URL). The trust primitives keep working offline; "
+            "re-enabling the network adds a discoverable profile and portable "
+            "reputation that carries across counterparties."
         )
     elif not published:
         # Network reachable but the agent hasn't joined yet — the funnel
-        # step. Framed as the natural progression (local identity ->
-        # discoverable + reputation-building), honestly: erasure stays
-        # under the operator's control and persistence is opt-in, so
-        # this is an invitation, not a lock-in.
+        # step. The 0.6.1 copy stated the action + abstract benefits
+        # ("become discoverable / build reputation") and a fresh agent
+        # read it as optional (battle test + 2026-07-02 cold-run). This
+        # rewrite makes the VALUE legible instead of the nudge pushier:
+        # the concrete thing publishing unlocks is *other*-verifiability
+        # — a local identity only YOU can verify becomes one a counterparty
+        # can independently check. Honesty is load-bearing here: it does
+        # NOT promise reachability (the directory is a vetting surface, not
+        # a contact/routing surface), and the ratified opt-in / offline /
+        # operator-controlled-erasure framing survives verbatim.
         steps.append(
-            "You have a cryptographic identity but haven't joined the synpareia network "
-            "yet. Call publish_profile(name=...) to become discoverable and start "
-            "building portable reputation — the natural next step once your local "
-            "identity is set up. Erasure stays under your control; persistence is opt-in."
+            "You have a cryptographic identity — but on your own, you can only verify "
+            "your OWN claims with it. publish_profile(name=...) makes that identity (and "
+            "the witnessed reputation you build on it) independently verifiable by a "
+            "counterparty who has never met you: they look up your profile and confirm "
+            "one consistent identity with a checkable history, not an anonymous key — "
+            "which is the whole point of vetting and attestation once a second agent is "
+            "involved. Still your choice: the primitives keep working offline, "
+            "persistence is opt-in, and erasure stays under your control."
         )
     if active_conversations:
         steps.append(

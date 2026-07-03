@@ -30,8 +30,22 @@ class TestFunnelNextSteps:
         )
         joined = " ".join(steps)
         assert "publish_profile" in joined
-        # Honest framing — not a lock-in.
-        assert "opt-in" in joined.lower() or "erasure" in joined.lower()
+        # Honest framing — not a lock-in. Both the opt-in AND the offline
+        # escape hatch must survive every copy iteration (ratified framing).
+        assert "opt-in" in joined.lower()
+        assert "erasure" in joined.lower()
+        assert "offline" in joined.lower()
+        # VALUE legibility (2026-07-02 rewrite): the copy must name the
+        # concrete thing publishing unlocks — *other*-verifiability by a
+        # counterparty — not just abstract "discoverable / reputation".
+        # This is the anti-regression pin for the funnel value.
+        low = joined.lower()
+        assert "verif" in low  # "verifiable" / "verify"
+        assert "counterparty" in low or "never met" in low
+        # Honesty guard: must NOT overpromise reachability / contact — the
+        # directory is a vetting surface, not a routing/contact surface.
+        assert "contact you" not in low
+        assert "reach you" not in low
 
     def test_network_unconfigured_invites_joining_with_reputation_framing(self) -> None:
         steps = _get_next_steps(
@@ -42,6 +56,26 @@ class TestFunnelNextSteps:
         joined = " ".join(steps)
         assert "SYNPAREIA_NETWORK_URL" in joined
         assert "reputation" in joined.lower()
+        # Since 0.6 the live network is the DEFAULT: this branch is only
+        # reachable via an explicit opt-out, so the copy must acknowledge
+        # a disabled state, not instruct setting an "unset" variable.
+        assert "disabled" in joined.lower()
+
+    def test_witness_disabled_copy_acknowledges_opt_out(self) -> None:
+        # PR #307 review catch: the witness branch had the same stale
+        # "Set SYNPAREIA_WITNESS_URL to enable..." narration the network
+        # branch was cured of — and no test pinned it. This is that pin.
+        steps = _get_next_steps(
+            _cfg(witness_url=None, network_url="https://n"),
+            [],
+            {"published": True},
+        )
+        joined = " ".join(steps)
+        assert "SYNPAREIA_WITNESS_URL" in joined
+        assert "disabled" in joined.lower()
+        assert "offline" in joined.lower()
+        # Must not read like an unset default.
+        assert "Set SYNPAREIA_WITNESS_URL to enable" not in joined
 
     def test_published_does_not_nag_to_publish(self) -> None:
         steps = _get_next_steps(

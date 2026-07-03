@@ -84,11 +84,12 @@ async def attested_reputation(
 
     if not providers_queried:
         base["hint"] = (
-            "No Tier-3 providers configured. Set SYNPAREIA_NETWORK_URL for "
-            "the synpareia reputation network or SYNPAREIA_MOLTRUST_API_KEY "
-            "for MolTrust. Without them this tool returns no signals -- "
-            "fall back to recall_counterparty (Tier 1) or check_media_signals "
-            "(Tier 2)."
+            "No Tier-3 providers available — the synpareia reputation network is "
+            "disabled by configuration (SYNPAREIA_NETWORK_URL), and no "
+            "SYNPAREIA_MOLTRUST_API_KEY is set for MolTrust. Re-enable the network "
+            "(or add a MolTrust key) for attested reputation; without them this "
+            "tool returns no signals -- fall back to recall_counterparty (Tier 1) "
+            "or check_media_signals (Tier 2)."
         )
 
     return base

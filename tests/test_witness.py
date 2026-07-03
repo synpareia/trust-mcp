@@ -30,7 +30,7 @@ class TestRequireWitness:
         )
         import pytest
 
-        with pytest.raises(ValueError, match="Witness service not configured"):
+        with pytest.raises(ValueError, match="Witness service is disabled by configuration"):
             _require_witness(app)
 
     def test_passes_with_client(self, profile_manager: ProfileManager, config: Config) -> None:

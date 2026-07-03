@@ -66,7 +66,7 @@ def encode_signed(content: str, ctx: Context) -> dict[str, Any]:
     rides along.
 
     Returns `reputation_tier=4`, `assurance_tier=1` (self-attested; upgrade
-    to Tier 3 by witnessing via `make_claim` with `assurance='witnessed'`).
+    to Tier 3 by witnessing: `make_claim(content, witness=True)`).
     """
     if not isinstance(content, str):
         return {"error": "content must be a string"}
@@ -108,7 +108,7 @@ def encode_signed(content: str, ctx: Context) -> dict[str, Any]:
         "hint": (
             "Drop the `encoded` string into any transport payload. Recipients "
             "call decode_signed to verify. For witnessed assurance (Tier 3), "
-            "use make_claim with assurance='witnessed' instead."
+            "use make_claim(content, witness=True) instead."
         ),
     }
 

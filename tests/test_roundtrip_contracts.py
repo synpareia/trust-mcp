@@ -17,16 +17,20 @@ breaks. One test per output->successor pair on the trust paths.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import inspect
 
 import synpareia
 
+from synpareia_trust_mcp.tools.identity import verify_claim
+from synpareia_trust_mcp.tools.recall import remember_counterparty
 from synpareia_trust_mcp.tools.recording import (
     recording_append,
     recording_end,
     recording_start,
 )
+from synpareia_trust_mcp.tools.trust import evaluate_agent
 from synpareia_trust_mcp.tools.witness import (
     witness_info,
     witness_seal_state,
@@ -165,3 +169,68 @@ class TestRecordingRoundTrip:
         assert "chain_id" in piped, end
         assert "chain_head_hex" in piped, end
         assert piped["chain_head_hex"] == end["head_hash"]
+
+
+class TestTask40DeferredPipes:
+    """The three mismatches the 0.6.2 32-tool audit flagged as 'needs design' and
+    deferred to task #40. Each is now resolved and pinned here.
+    """
+
+    def test_identity_block_pipes_into_verify_claim_via_did_alias(self, app_ctx):
+        """Producers (orient/whoami/publish/directory) emit the DID under `did`;
+        verify_claim(identity) expected only `agent_did`. #3 adds `did` as an alias
+        so an identity block pipes straight in."""
+        ctx, _ = app_ctx
+        prof = synpareia.generate()
+        # Shape of orient's identity block (extra keys get dropped by the pipe).
+        identity = {
+            "did": prof.id,
+            "public_key_b64": base64.b64encode(prof.public_key).decode(),
+            "display_name": "dropped-by-pipe",
+            "has_private_key": True,
+        }
+        piped = _pipe(identity, verify_claim)
+        # The alias field must survive FastMCP's drop-unknown (it did not pre-fix).
+        assert "did" in piped, piped
+        assert "public_key_b64" in piped, piped
+        result = verify_claim(claim_type="identity", ctx=ctx, **piped)
+        assert result.get("valid") is True, result
+
+    def test_remember_counterparty_record_pipes_into_evaluate_agent(self, app_ctx):
+        """remember_counterparty emits `namespace` + `namespace_id`; evaluate_agent
+        expected `namespace` + `id`. #2 adds `namespace_id` as an alias for `id` so a
+        Tier-1 record pipes straight in without renaming."""
+        ctx, _ = app_ctx
+        did = synpareia.generate().id
+        record = remember_counterparty(
+            namespace="synpareia", namespace_id=did, display_name="Peer", ctx=ctx
+        )
+        assert "error" not in record, record
+        piped = _pipe(record, evaluate_agent)
+        assert "namespace" in piped and "namespace_id" in piped, record
+        result = _run(evaluate_agent(ctx=ctx, **piped))
+        # Routing must succeed: namespace_id bound to id, so NOT the missing-args error.
+        assert "requires (namespace, id)" not in (result.get("error") or ""), result
+        # And it evaluated the intended namespace (not an inferred/legacy fallback).
+        assert result.get("error") is None, result
+
+    def test_blind_party_commitment_verifies_via_verify_claim(self, app_ctx):
+        """#1 was a field-name/instruction gap, NOT a scheme incompatibility: the
+        `party_a_commitment` / `party_b_commitment` a blind conclusion echoes back is a
+        verify_claim-compatible commitment_hash (it is literally the hash each party
+        sealed locally and submitted). Pin that it verifies, so the instruction fix
+        (point at verify_claim, not the phantom `reveal_commitment` tool) is grounded."""
+        ctx, _ = app_ctx
+        app = ctx.request_context.lifespan_context
+        content = "my independent assessment"
+        seal = app.conversation_manager.seal_commitment(content)
+        # Simulate what witness_get_blind / witness_submit_blind echoes back.
+        blind_result = {"party_a_commitment": seal["commitment_hash"]}
+        result = verify_claim(
+            claim_type="commitment",
+            ctx=ctx,
+            commitment_hash=blind_result["party_a_commitment"],
+            content=content,
+            nonce_b64=seal["nonce_b64"],
+        )
+        assert result.get("valid") is True, result

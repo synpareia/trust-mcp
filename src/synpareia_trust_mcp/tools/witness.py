@@ -39,9 +39,9 @@ def _require_witness(app: AppContext) -> WitnessClient:
     """
     if app.witness_client is None:
         msg = (
-            "Witness service not configured. Set SYNPAREIA_WITNESS_URL "
-            "(and optionally SYNPAREIA_WITNESS_TOKEN) to enable witness tools. "
-            "Install with: pip install synpareia-trust-mcp[network]"
+            "Witness service is disabled by configuration (SYNPAREIA_WITNESS_URL). "
+            "Re-enable it (and optionally set SYNPAREIA_WITNESS_TOKEN) to use "
+            "witness tools. Install with: pip install synpareia-trust-mcp[network]"
         )
         raise ValueError(msg)
     return app.witness_client
@@ -420,9 +420,12 @@ async def witness_submit_blind(
             result["party_a_commitment"] = status.party_a_commitment
             result["party_b_commitment"] = status.party_b_commitment
             result["message"] = (
-                "Both parties have submitted. You can now exchange reveals. "
-                "Use reveal_commitment with your original content and nonce to "
-                "prove your assessment was independent."
+                "Both parties have submitted. Exchange reveals now: send the other "
+                "party your original content + nonce_b64, and verify theirs with "
+                "verify_claim(claim_type='commitment', commitment_hash=<their "
+                "party_a_commitment or party_b_commitment>, content=<their revealed "
+                "content>, nonce_b64=<their revealed nonce>). A valid result proves "
+                "their assessment was committed before either of you revealed."
             )
         elif status.status == "waiting":
             result["message"] = "Your commitment is recorded. Waiting for the other party."

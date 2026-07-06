@@ -56,6 +56,7 @@ Start by calling `orient` — it maps your situation to the right tools and poin
 | `recall_counterparty` | Look up what you know about a counterparty | Yes |
 | `add_evaluation` | Attach your own note/score to a counterparty | Yes |
 | `find_evaluations` | Search your evaluations by tag | Yes |
+| `forget_counterparty` | Erase a counterparty + all your evaluations of them | Yes |
 | `witness_info` | Witness identity, public key, service URL | No |
 | `witness_seal_timestamp` | Timestamp seal over a block hash | No |
 | `witness_seal_state` | State seal over a chain head | No |
@@ -73,7 +74,7 @@ Start by calling `orient` — it maps your situation to the right tools and poin
 | `delete_profile_history` | Delete a prior published card version | No |
 | `delete_profile` | Tombstone your published card | No |
 
-17 of the 32 tools work fully offline (identity, signing, recording, commitments, local counterparty memory, and offline seal verification). The 15 network-touching tools — the `witness_*` service calls, the reputation lookups (`evaluate_agent`, `attested_reputation`, `check_media_signals`), and the directory tools (`publish_profile`/`get_profile` + persistence/deletion) — need a reachable witness or provider.
+18 of the 33 tools work fully offline (identity, signing, recording, commitments, local counterparty memory including erasure, and offline seal verification). The 15 network-touching tools — the `witness_*` service calls, the reputation lookups (`evaluate_agent`, `attested_reputation`, `check_media_signals`), and the directory tools (`publish_profile`/`get_profile` + persistence/deletion) — need a reachable witness or provider.
 
 ### Upgrading from 0.2.0
 
@@ -183,9 +184,10 @@ What's stored:
   When you record an evaluation about a counterparty, that observation stays on
   your disk — there is no automatic upload, no shared reputation database, no
   cross-agent broadcast.
-- **Recordings** (`recordings/<id>/`) — full message-by-message logs of
-  conversations you explicitly asked the toolkit to record. Same locality
-  guarantees.
+- **Conversation/recording chains** (`conversations/conv_<id>.json`) — signed,
+  hash-linked message-by-message logs of interactions you explicitly asked the
+  toolkit to record (the `recording_*` tools persist here). Tamper-evident and
+  local; same locality guarantees.
 
 What flows off-machine (only when the corresponding tool is invoked):
 
@@ -212,8 +214,14 @@ Subject-rights / GDPR notes (where the GDPR applies to your agent's
 operations):
 
 - All journal data lives on the data subject's own machine. Erasure is
-  achieved by deleting the relevant record — there is no `forget_counterparty`
-  tool yet; today, edit `counterparties.json` directly.
+  achieved with `forget_counterparty(identifier)`, which permanently removes a
+  counterparty and all your evaluations of them from the local journal (the
+  Tier-1 counterpart to the directory-side `delete_profile`). You can also edit
+  `counterparties.json` directly. Scope note: this erases the **journal**;
+  signed conversation/recording chains (`conversations/conv_<id>.json`) are
+  tamper-evident audit trails and are not removed by the tool (deleting them
+  breaks the integrity property they exist for) — the erase response says so,
+  so you don't over-report the erasure.
 - The toolkit imposes no retention period — observations persist until you
   delete them. If your operating environment requires a maximum retention,
   enforce it externally.

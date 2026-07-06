@@ -76,6 +76,28 @@ class TestOrientAndDiscover:
             # and mention at least one tool name or configuration hint.
             assert guide, f"Empty guide for area '{area_entry['area']}'"
 
+    def test_orient_surfaces_first_run_disclosure_on_fresh_identity(self, app_ctx) -> None:
+        """A freshly-minted identity carries the GDPR §6 first-run notice
+        ('nothing sent to the network'); a loaded one does not."""
+        ctx, app = app_ctx
+        # app_ctx generates a fresh profile, so newly_generated is True.
+        assert app.profile_manager.newly_generated is True
+        result = orient(ctx)
+        first_run = result["identity"].get("first_run")
+        assert first_run is not None
+        assert first_run["new_identity"] is True
+        # Durable-true: states the standing local-until-you-act property + the
+        # opt-in nature of publishing/witnessing (must not go stale if the
+        # agent publishes later in the same session).
+        notice = first_run["notice"].lower()
+        assert "locally" in notice
+        assert "publish_profile" in notice
+        assert "opt-in" in notice
+
+        # Simulate a subsequent session (identity loaded, not minted).
+        app.profile_manager.newly_generated = False
+        assert "first_run" not in orient(ctx)["identity"]
+
     def test_orient_includes_next_steps(self, app_ctx) -> None:
         ctx, _ = app_ctx
         result = orient(ctx)

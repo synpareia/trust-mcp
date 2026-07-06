@@ -87,13 +87,13 @@ class TestMCPServerSetup:
         tool_count = len(mcp._tool_manager._tools)
         # 2 (orient/learn) + 2 (make_claim/verify_claim) + 1 (evaluate_agent)
         # + 1 (prove_independence) + 5 (recording) + 6 (witness)
-        # + 4 (remember/recall/add_evaluation/find_evaluations)
+        # + 5 (remember/recall/add_evaluation/find_evaluations/forget_counterparty)
         # + 1 (check_media_signals) + 1 (attested_reputation)
-        # + 2 (encode_signed/decode_signed) = 25
+        # + 2 (encode_signed/decode_signed) = 26
         # + 7 (Phase 1g directory: publish_profile, get_profile,
         #     update_profile_policy, enable_persistence, disable_persistence,
-        #     delete_profile_history, delete_profile) = 32
-        assert tool_count == 32, f"Expected 32 tools, got {tool_count}"
+        #     delete_profile_history, delete_profile) = 33
+        assert tool_count == 33, f"Expected 33 tools, got {tool_count}"
 
 
 class TestMCPLifespan:
@@ -130,4 +130,4 @@ class TestEntryPoint:
         """Package metadata should be accessible."""
         import synpareia_trust_mcp
 
-        assert synpareia_trust_mcp.__version__ == "0.6.3"
+        assert synpareia_trust_mcp.__version__ == "0.7.0"

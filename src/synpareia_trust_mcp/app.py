@@ -48,6 +48,15 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     # Generate or load the agent's identity (first run creates a new keypair)
     profile_manager.ensure_profile()
 
+    # First-run disclosure (GDPR §6 data-protection-by-design). When a brand-new
+    # identity is minted, tell the operator — on stderr, never stdout, which is
+    # the stdio-MCP protocol channel — that an identity now exists locally and
+    # that nothing has been sent anywhere. This matters more since 0.6 defaulted
+    # the network ON: the operator should know the identity is local-only until
+    # they make an explicit publishing call.
+    if profile_manager.newly_generated:
+        _emit_first_run_disclosure(config, profile_manager.profile.id)
+
     # Initialize witness client if URL is configured
     witness_client = _create_witness_client(config)
 
@@ -62,6 +71,29 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     finally:
         if witness_client is not None:
             await witness_client.close()
+
+
+def _emit_first_run_disclosure(config: Config, did: str) -> None:
+    """Print the first-run identity disclosure to stderr (GDPR §6).
+
+    stderr, not stdout: stdout carries the stdio-MCP JSON-RPC stream and must
+    not be polluted. MCP hosts surface a server's stderr in their logs, so this
+    reaches the operator.
+    """
+    import sys
+
+    profile_path = config.data_dir / "profile.json"
+    print(
+        "[synpareia-trust-mcp] Generated a new agent identity.\n"
+        f"  DID:     {did}\n"
+        f"  Stored:  {profile_path} (private key, mode 0600 — back it up; "
+        "losing it loses the identity)\n"
+        "  Network: nothing has been sent anywhere. Publishing to the "
+        "synpareia directory is an explicit publish_profile call; witnessing "
+        "is an explicit witness_* call.",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def _create_witness_client(config: Config) -> WitnessClient | None:

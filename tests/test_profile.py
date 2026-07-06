@@ -60,6 +60,41 @@ class TestProfilePersistence:
         assert profile1.public_key == profile2.public_key
         assert profile1.private_key == profile2.private_key
 
+    def test_newly_generated_flag_true_only_on_fresh_mint(self, tmp_data_dir: Path) -> None:
+        # First run mints a keypair — the first-run disclosure (GDPR §6) fires.
+        pm1 = ProfileManager(tmp_data_dir)
+        assert pm1.newly_generated is False  # not until ensure_profile runs
+        pm1.ensure_profile()
+        assert pm1.newly_generated is True
+
+        # Second run loads the persisted key — no disclosure, no fresh mint.
+        pm2 = ProfileManager(tmp_data_dir)
+        pm2.ensure_profile()
+        assert pm2.newly_generated is False
+
+    def test_newly_generated_false_when_importing_env_key(self, tmp_data_dir: Path) -> None:
+        import base64
+
+        key_b64 = base64.b64encode(synpareia.generate().private_key).decode()
+        pm = ProfileManager(tmp_data_dir, private_key_b64=key_b64)
+        pm.ensure_profile()
+        # Importing an existing key is not minting a new identity.
+        assert pm.newly_generated is False
+
+    def test_newly_generated_true_on_corrupt_auto_recover(
+        self, tmp_data_dir: Path, monkeypatch
+    ) -> None:
+        # A corrupt profile regenerated under AUTO_RECOVER is a fresh identity
+        # the operator should be told about — the disclosure must fire.
+        pm1 = ProfileManager(tmp_data_dir)
+        pm1.ensure_profile()
+        (tmp_data_dir / "profile.json").write_text("{ not valid json", encoding="utf-8")
+
+        monkeypatch.setenv("SYNPAREIA_AUTO_RECOVER_PROFILE", "true")
+        pm2 = ProfileManager(tmp_data_dir)
+        pm2.ensure_profile()
+        assert pm2.newly_generated is True
+
     def test_does_not_overwrite_existing_profile(self, tmp_data_dir: Path) -> None:
         pm1 = ProfileManager(tmp_data_dir)
         pm1.ensure_profile()

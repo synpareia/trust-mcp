@@ -101,6 +101,25 @@ def orient(ctx: Context) -> dict[str, Any]:
         "has_private_key": profile_data["has_private_key"],
         "directory": directory_state,
     }
+    # First-run disclosure (GDPR §6): when this identity was minted in the
+    # current session, tell the caller it's local-only and nothing has been
+    # sent — the agent-discoverable twin of the stderr message emitted at
+    # startup. Only present on a fresh identity; absent once loaded from disk.
+    if app.profile_manager.newly_generated:
+        # Durable-true phrasing: the flag persists for the whole session, so
+        # the notice must stay accurate even after the agent publishes or
+        # witnesses. It states the standing property (local-until-you-act +
+        # opt-in) rather than an absolute "nothing has been sent", which would
+        # go stale the moment a network call is made.
+        identity["first_run"] = {
+            "new_identity": True,
+            "notice": (
+                "This identity was generated locally this session. It lives only "
+                "on this machine unless you make it otherwise — publishing to the "
+                "directory (publish_profile) and witnessing (witness_*) are always "
+                "explicit, opt-in calls, never automatic."
+            ),
+        }
 
     # Configuration status
     services = {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,29 @@ from synpareia_trust_mcp.journal import (
     JournalStore,
     RecordNotFoundError,
 )
+
+
+class TestLoadRobustness:
+    """A corrupt counterparties.json must degrade gracefully, not crash the
+    read tools that call _load (PR #329 review: the fix is central to _load,
+    so recall/remember/add/find/forget all benefit)."""
+
+    def test_malformed_row_is_skipped_not_raised(self, store: JournalStore, capsys) -> None:
+        good = store.upsert(namespace="slack", namespace_id="G", display_name="good")
+        # Append a row missing required fields — would KeyError in from_dict.
+        data = json.loads(store._path.read_text())
+        data.append({"identifier": "local:broken", "display_names": ["x"]})
+        store._path.write_text(json.dumps(data))
+        # A fresh store over the same file loads only the valid record.
+        reloaded = JournalStore(store._data_dir)
+        records = reloaded.all()
+        assert [r.identifier for r in records] == [good.identifier]
+        assert "skipping malformed journal record" in capsys.readouterr().err
+
+    def test_non_list_top_level_is_empty_not_raised(self, store: JournalStore) -> None:
+        store._path.parent.mkdir(parents=True, exist_ok=True)
+        store._path.write_text(json.dumps({"not": "a list"}))
+        assert JournalStore(store._data_dir).all() == []
 
 
 @pytest.fixture()
@@ -219,3 +243,41 @@ class TestDataclassRoundtrip:
         assert restored is not None
         assert restored.evaluations[0].text == "test eval"
         assert restored.evaluations[0].score == 0.5
+
+
+class TestDelete:
+    def test_delete_removes_record_and_returns_it(self, store: JournalStore) -> None:
+        r = store.upsert(namespace="slack", namespace_id="U1", display_name="alice")
+        store.add_evaluation(r.identifier, text="note", tags=["t"], score=0.5)
+        removed = store.delete(r.identifier)
+        assert removed is not None
+        assert removed.identifier == r.identifier
+        assert len(removed.evaluations) == 1
+        assert store.get(r.identifier) is None
+        assert store.all() == []
+
+    def test_delete_missing_returns_none(self, store: JournalStore) -> None:
+        assert store.delete("local:nope") is None
+
+    def test_delete_by_did_alias(self, store: JournalStore) -> None:
+        r = store.upsert(namespace="slack", namespace_id="U1", display_name="alice")
+        store.add_did(r.identifier, "did:synpareia:deadbeef")
+        removed = store.delete("did:synpareia:deadbeef")
+        assert removed is not None
+        assert store.get(r.identifier) is None
+
+    def test_delete_leaves_other_records(self, store: JournalStore) -> None:
+        keep = store.upsert(namespace="slack", namespace_id="K", display_name="keep")
+        drop = store.upsert(namespace="slack", namespace_id="D", display_name="drop")
+        store.delete(drop.identifier)
+        assert store.get(keep.identifier) is not None
+        assert store.get(drop.identifier) is None
+
+    def test_delete_persists_to_disk(self, tmp_path: Path) -> None:
+        d = tmp_path / "journal"
+        s1 = JournalStore(d)
+        r = s1.upsert(namespace="slack", namespace_id="U1", display_name="alice")
+        s1.delete(r.identifier)
+        # Fresh store reading the same file must not see the deleted record.
+        s2 = JournalStore(d)
+        assert s2.get(r.identifier) is None

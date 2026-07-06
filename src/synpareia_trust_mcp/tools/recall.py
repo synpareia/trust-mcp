@@ -7,6 +7,7 @@ Per the four-tier reputation-evidence taxonomy
 - `recall_counterparty` — read-only lookup by identifier or display name.
 - `add_evaluation` — write an agent-authored note/tags/score to a record.
 - `find_evaluations` — search evaluations across all records by tag.
+- `forget_counterparty` — erase a record and all its evaluations (Art. 17).
 
 These tools form a closed Tier-1 loop: nothing leaves the local data dir
 and no external services are contacted. Agents can build durable,
@@ -135,6 +136,81 @@ def add_evaluation(
         "ok": True,
         "identifier": identifier,
         "evaluation": asdict(evaluation),
+    }
+
+
+@mcp.tool()
+def forget_counterparty(
+    identifier: str,
+    ctx: Context,
+) -> dict[str, Any]:
+    """Erase a counterparty and all your evaluations of them from the local journal.
+
+    Permanently removes the Tier-1 record matched by `identifier` (a
+    `local:...` id or a DID alias) — its display-name history, custom fields,
+    and every note/score you attached. This is the local-data counterpart to
+    the directory-side `delete_profile`: it is how "erasure stays under your
+    control" is enforced for **the counterparty journal** (GDPR Art. 17, on
+    your own machine). Your private notes were never uploaded, so there is no
+    journal copy elsewhere to recall.
+
+    Scope — read this before reporting an erasure to a data subject: this
+    erases the **journal** record only. Signed conversation/recording chains
+    (stored in ``conversations/`` as ``conv_<id>.json``) that reference the
+    same counterparty are NOT touched by this tool (deleting them would break
+    the tamper-evidence property they exist for); the response says so on every
+    successful erase so you don't over-report.
+
+    Erasure is idempotent: forgetting an identifier that isn't (or is no
+    longer) in the journal returns ``forgotten: false`` without error — the
+    end state (no such record) is what erasure guarantees. Call
+    `recall_counterparty` first if you want to confirm the identifier before
+    erasing.
+    """
+    app: AppContext = ctx.request_context.lifespan_context
+    # _load now skips malformed rows centrally (journal.py), so a corrupt row
+    # no longer raises here. This guards the remaining write-path failure (an
+    # OSError from _save: disk full / permission) so the documented
+    # idempotent-no-error erasure contract holds even then. Narrow, not bare —
+    # a programming error in delete() still surfaces loudly (reviewer nit).
+    try:
+        removed = app.journal_store.delete(identifier)
+    except OSError as exc:
+        return {
+            "ok": False,
+            "forgotten": False,
+            "identifier": identifier,
+            "error": f"{type(exc).__name__}: {exc}"[:200],
+            "message": (
+                "Could not complete erasure — the local journal could not be "
+                "rewritten (disk full or permissions?). No record was removed. "
+                "Inspect the counterparties.json data file."
+            ),
+        }
+    if removed is None:
+        return {
+            "ok": True,
+            "forgotten": False,
+            "identifier": identifier,
+            "message": (
+                f"No journal record matched '{identifier}' — nothing to erase. "
+                "It may already be gone, or the identifier is wrong "
+                "(recall_counterparty to check)."
+            ),
+        }
+    return {
+        "ok": True,
+        "forgotten": True,
+        "identifier": removed.identifier,
+        "display_names": list(removed.display_names),
+        "evaluations_erased": len(removed.evaluations),
+        "scope": "local_journal_only",
+        "message": (
+            "Erased from your local journal — this counterparty record and all "
+            "your evaluations of them are permanently removed. Note: any signed "
+            "conversation/recording chains (in conversations/) reference the "
+            "counterparty by DID and are NOT erased by this tool."
+        ),
     }
 
 

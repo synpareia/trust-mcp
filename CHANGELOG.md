@@ -5,6 +5,36 @@ All notable changes to `synpareia-trust-mcp` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-07-03
+
+Privacy-completion release: makes the data-protection posture the prove/vet/bind
+copy already promises actually true in the product. Closes the two GDPR §6 gaps
+the 0.6.3 publish-gate `legal` perspective surfaced (both amplified by
+network-on-by-default). Adds one tool (33 total) — backward-compatible; minor
+bump.
+
+### Added
+
+- **`forget_counterparty(identifier)`** — first-class Tier-1 erasure. Permanently
+  removes a counterparty record and *all* your evaluations of them from the local
+  **journal**; the local-data counterpart to the directory-side `delete_profile`.
+  Idempotent (forgetting an absent identifier returns `forgotten: false`, no
+  error). This is the concrete mechanism behind "erasure stays under your
+  control" **for the counterparty journal** (GDPR Art. 17, on the data subject's
+  own machine) — previously the README could only point agents at hand-editing
+  `counterparties.json`. Scope is deliberately the journal: signed
+  conversation/recording chains (`conversations/conv_<id>.json`) are
+  tamper-evident audit trails and are not erased by this tool (the response says
+  so), preserving the audit-integrity-vs-erasure trade the data-protection design
+  already names.
+- **First-run identity disclosure (GDPR §6).** When the server mints a brand-new
+  identity, it now discloses — on stderr (never stdout, the stdio-MCP protocol
+  channel) — the DID, the on-disk location, and that *nothing has been sent
+  anywhere* (publishing and witnessing are always explicit calls). `orient` also
+  carries an `identity.first_run` notice for the session in which the identity
+  was created. This matters more since 0.6 defaulted the network ON: the operator
+  should know a fresh identity is local-only until they make an explicit call.
+
 ## [0.6.3] - 2026-07-03
 
 Positioning + copy release ahead of the MCP-marketplace listings, and the first

@@ -28,6 +28,7 @@ import contextlib
 import json
 import math
 import os
+import sys
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -268,6 +269,29 @@ class JournalStore:
                     )
         return results
 
+    def delete(self, identifier: str) -> AgentRecord | None:
+        """Erase a counterparty record (and all its evaluations) by identifier.
+
+        Matches on the primary `identifier` or any alias (a DID, etc.). Removes
+        the whole record — its display-name history, custom fields, and every
+        evaluation you attached — and rewrites the journal. Returns the removed
+        record so the caller can report what was erased, or ``None`` if no
+        record matched (erasure is idempotent: forgetting something already
+        gone is not an error).
+
+        This is the local-journal counterpart to the directory-side
+        `delete_profile`: it is the concrete mechanism behind "erasure stays
+        under your control" for Tier-1 data (GDPR Art. 17 on the data subject's
+        own machine).
+        """
+        records = self._load()
+        target = _find_by_identifier(records, identifier)
+        if target is None:
+            return None
+        remaining = [r for r in records if r is not target]
+        self._save(remaining)
+        return target
+
     def all(self) -> list[AgentRecord]:
         return self._load()
 
@@ -278,7 +302,26 @@ class JournalStore:
             data = json.loads(self._path.read_text())
         except (json.JSONDecodeError, UnicodeDecodeError):
             return []
-        return [AgentRecord.from_dict(item) for item in data]
+        if not isinstance(data, list):
+            return []
+        # Skip individual malformed rows (a hand-edited or partially-written
+        # counterparties.json) rather than raising out of a read tool: a single
+        # bad row must not crash recall/remember/add_evaluation/find/forget. The
+        # skip is logged to stderr (never stdout — the stdio-MCP JSON-RPC
+        # channel). Whole-file corruption is handled above (returns empty);
+        # deeper quarantine-vs-drop durability is tracked separately (task #66).
+        records: list[AgentRecord] = []
+        for item in data:
+            try:
+                records.append(AgentRecord.from_dict(item))
+            except (KeyError, TypeError, ValueError) as exc:
+                print(
+                    f"[synpareia-trust-mcp] skipping malformed journal record "
+                    f"({type(exc).__name__}: {exc}) in {self._path}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        return records
 
     def _save(self, records: list[AgentRecord]) -> None:
         self._data_dir.mkdir(parents=True, exist_ok=True)

@@ -34,6 +34,11 @@ class ProfileManager:
         self._data_dir = data_dir
         self._private_key_b64 = private_key_b64
         self._profile: synpareia.Profile | None = None
+        # True iff ensure_profile() minted a brand-new keypair this session
+        # (as opposed to loading a persisted one or importing an env key).
+        # Drives the first-run "nothing has been sent to the network yet"
+        # disclosure (GDPR §6 data-protection-by-design).
+        self.newly_generated: bool = False
 
     @property
     def profile(self) -> synpareia.Profile:
@@ -148,4 +153,5 @@ class ProfileManager:
     def _generate_and_save(self, path: Path) -> synpareia.Profile:
         profile = synpareia.generate()
         self._save_profile(path, profile)
+        self.newly_generated = True
         return profile

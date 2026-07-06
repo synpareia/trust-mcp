@@ -234,6 +234,51 @@ class TestNoStdoutPollution:
         assert buf.getvalue() == "", f"stray stdout: {buf.getvalue()!r}"
 
 
+class TestFirstRunDisclosure:
+    """The GDPR §6 first-run disclosure MUST go to stderr, never stdout —
+    stdout is the stdio-MCP JSON-RPC channel and a stray write there breaks
+    every host. (Publish-gate close-read M1 / coverage G1 / pentest INFO-1.)"""
+
+    def test_disclosure_goes_to_stderr_not_stdout(self, tmp_path: Path, capsys) -> None:
+        from synpareia_trust_mcp.app import _emit_first_run_disclosure
+        from synpareia_trust_mcp.config import Config
+
+        did = "did:synpareia:testdisclosure"
+        cfg = Config(
+            data_dir=tmp_path / "data",
+            display_name="t",
+            private_key_b64=None,
+            network_url=None,
+            auto_register=False,
+            witness_url=None,
+            witness_token=None,
+            moltbook_api_url=None,
+            moltrust_api_key=None,
+        )
+        _emit_first_run_disclosure(cfg, did)
+        captured = capsys.readouterr()
+        # Load-bearing: nothing on the JSON-RPC channel.
+        assert captured.out == "", f"disclosure leaked to stdout: {captured.out!r}"
+        # Content lands on stderr: DID, path, and the 'nothing sent' assurance.
+        assert did in captured.err
+        assert "profile.json" in captured.err
+        assert "nothing has been sent" in captured.err
+
+    def test_disclosure_only_fires_on_fresh_mint(self, tmp_path: Path, capsys) -> None:
+        # A fresh mint sets newly_generated True; a reload leaves it False and
+        # the lifespan branch (if newly_generated: emit) must stay silent.
+        from synpareia_trust_mcp.profile import ProfileManager
+
+        data_dir = tmp_path / "data"
+        first = ProfileManager(data_dir)
+        first.ensure_profile()
+        assert first.newly_generated is True
+        capsys.readouterr()  # clear
+        reloaded = ProfileManager(data_dir)
+        reloaded.ensure_profile()
+        assert reloaded.newly_generated is False  # so the emit branch is skipped
+
+
 class TestPersistedProfileShape:
     """Guard against profile.json schema drift."""
 

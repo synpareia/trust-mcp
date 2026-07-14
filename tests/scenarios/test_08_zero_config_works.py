@@ -165,7 +165,7 @@ class TestOfflineToolsWork:
 class TestOnlineToolsDegradeGracefully:
     def test_evaluate_agent_hints_at_env_vars(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(evaluate_agent(identifier="alice", ctx=ctx))
+        result = _run(evaluate_agent(namespace="synpareia", id="alice", ctx=ctx))
         # Never None, always a structured dict
         assert isinstance(result, dict)
         assert result["providers_queried"] == []
@@ -218,7 +218,7 @@ class TestNoNullReturns:
             recording_list(ctx=ctx),
             orient(ctx=ctx),
             learn(area="verification"),
-            _run(evaluate_agent(identifier="x", ctx=ctx)),
+            _run(evaluate_agent(namespace="synpareia", id="x", ctx=ctx)),
             _run(witness_info(ctx=ctx)),
         ]
         for r in calls:

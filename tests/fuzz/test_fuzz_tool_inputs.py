@@ -276,10 +276,10 @@ class TestOrientLearnFuzz:
 
 class TestEvaluateAgentFuzz:
     @FUZZ_SETTINGS
-    @given(identifier=_arbitrary_text())
-    def test_evaluate_agent_never_crashes(self, app_ctx, identifier) -> None:
+    @given(id=_arbitrary_text())
+    def test_evaluate_agent_never_crashes(self, app_ctx, id) -> None:
         ctx, _ = app_ctx
-        result = _run(evaluate_agent(identifier=identifier, ctx=ctx))
+        result = _run(evaluate_agent(namespace="synpareia", id=id, ctx=ctx))
         assert _is_safe_result(result)
 
 

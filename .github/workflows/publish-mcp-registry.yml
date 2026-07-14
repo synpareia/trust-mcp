@@ -22,6 +22,26 @@ permissions:
 jobs:
   publish-registry:
     runs-on: ubuntu-latest
+    # Operator-approval gate (#57): the registry listing publishes only after a manual
+    # approval in the `mcp-registry` GitHub Environment — the same discipline publish.yml uses
+    # for the `pypi` env. This flips the model from "Sam dispatches" to "Sam approves": a run
+    # can be triggered automatically (release: published) or by dispatch, but the WHOLE job
+    # PAUSES for Sam's environment approval before ANY step runs (checkout / login / publish).
+    #
+    # One-time setup: on the PUBLIC repo (synpareia/trust-mcp) → Settings → Environments →
+    # create `mcp-registry` with Required reviewers = @Tzam (parallel to the `pypi` env in
+    # CLAUDE.md §1b). Until it exists the gate is INERT — runs proceed with no pause.
+    #
+    # ⚠ OIDC caveat — VERIFY WITH A DRY RUN before relying on this for a real release. Adding
+    # `environment:` changes the OIDC token's `sub` claim to
+    # `repo:synpareia/trust-mcp:environment:mcp-registry` (was ref/event-based). Registry
+    # ownership of `io.github.synpareia/*` is proven via `github-oidc`, which we expect
+    # validates the `repository`/`repository_owner` claims (UNAFFECTED by `environment:`), not
+    # `sub` — so this should be safe. But that's registry-side internals we can't see here, so
+    # after creating the environment do ONE `workflow_dispatch` run, approve through the gate,
+    # and confirm `mcp-publisher login github-oidc` still authenticates BEFORE a real release
+    # depends on this path (#371 review).
+    environment: mcp-registry # requires manual approval (Sam)
     steps:
       - name: Checkout code
         uses: actions/checkout@v5

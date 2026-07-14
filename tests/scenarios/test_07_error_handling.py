@@ -229,21 +229,21 @@ class TestWitnessErrors:
 
 
 class TestEvaluateAgentErrors:
-    def test_empty_identifier(self, app_ctx) -> None:
+    def test_empty_id(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(evaluate_agent(identifier="", ctx=ctx))
+        result = _run(evaluate_agent(namespace="synpareia", id="", ctx=ctx))
         assert isinstance(result, dict)
         assert _is_safe_error(result)
 
-    def test_oversized_identifier(self, app_ctx) -> None:
+    def test_oversized_id(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(evaluate_agent(identifier=OVERSIZED, ctx=ctx))
+        result = _run(evaluate_agent(namespace="synpareia", id=OVERSIZED, ctx=ctx))
         assert isinstance(result, dict)
         assert _is_safe_error(result)
 
-    def test_injection_in_identifier(self, app_ctx) -> None:
+    def test_injection_in_id(self, app_ctx) -> None:
         ctx, _ = app_ctx
-        result = _run(evaluate_agent(identifier=INJECTION, ctx=ctx))
+        result = _run(evaluate_agent(namespace="synpareia", id=INJECTION, ctx=ctx))
         assert isinstance(result, dict)
         assert _is_safe_error(result)
 

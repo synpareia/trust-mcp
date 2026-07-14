@@ -7,9 +7,7 @@ network so every HTTP call lands on a controlled fixture -- no real
 external services involved.
 
 v0.4.0 signature: ``evaluate_agent(namespace, id)``. Fans out to all
-four tiers and returns a per-tier response. The legacy bare-string
-form (``identifier=...``) is still accepted for one release, emitting
-a ``deprecation`` flag in the response.
+four tiers and returns a per-tier response.
 """
 
 from __future__ import annotations
@@ -163,19 +161,8 @@ class TestEvaluateAgentZeroConfig:
         )
 
 
-class TestEvaluateAgentLegacySignature:
-    def test_legacy_identifier_kwarg_still_works(self, app_ctx_with_stubs) -> None:
-        """The bare-string (identifier=...) form must still return useful
-        data for one release while the deprecation rides along."""
-        ctx, _ = app_ctx_with_stubs
-        result = _call(ctx, identifier="alice")
-
-        assert "deprecation" in result
-        assert "evaluate_agent" in result["deprecation"]
-        # Legacy path routes Tier 3 at minimum.
-        assert set(result["providers_queried"]) >= {"synpareia", "moltrust"}
-
-    def test_legacy_form_without_namespace_or_id_rejected(self, app_ctx) -> None:
+class TestEvaluateAgentMissingArgs:
+    def test_form_without_namespace_or_id_rejected(self, app_ctx) -> None:
         ctx, _ = app_ctx
         result = _call(ctx)
         assert "error" in result

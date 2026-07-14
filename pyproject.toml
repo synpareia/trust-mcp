@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "synpareia-trust-mcp"
-version = "0.7.0"
+version = "0.8.0"
 description = "Trust tools for agent-to-agent dealings — prove, vet, and bind with verifiable evidence (MCP server)"
 readme = "README.md"
 license = "Apache-2.0"

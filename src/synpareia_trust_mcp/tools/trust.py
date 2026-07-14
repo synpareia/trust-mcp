@@ -10,9 +10,7 @@ Per the four-tier reputation-evidence taxonomy
   counterparty?" -- not a lookup.
 
 v0.4.0 introduces the (namespace, id) signature so the caller explicitly
-disambiguates which context they are asking about. The old bare-string
-``identifier=...`` form continues to work for one release with a
-``deprecation`` flag on the response; it will be removed in v0.5.
+disambiguates which context they are asking about.
 """
 
 from __future__ import annotations
@@ -56,7 +54,6 @@ async def evaluate_agent(
     namespace: str | None = None,
     id: str | None = None,  # noqa: A002 -- matches the spec in counterparty-reputation.md
     namespace_id: str | None = None,
-    identifier: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate a counterparty across every configured tier.
 
@@ -69,10 +66,6 @@ async def evaluate_agent(
     ``remember_counterparty`` emits, so a Tier-1 record pipes straight into
     this call without renaming (round-trip audit, task #40).
 
-    The legacy ``identifier=...`` form still works for one release and
-    emits a `deprecation` flag on the response. It will be removed in
-    v0.5.
-
     Returns `{tier1, tier2, tier3, tier4_available, providers_queried,
     providers_skipped, summary}`. Every tier is a list; empty lists
     mean "no evidence at this tier" (never an error). An agent reads
@@ -80,29 +73,13 @@ async def evaluate_agent(
     """
     # `namespace_id` is remember_counterparty's field name for the same value.
     id = id or namespace_id
-    deprecation: str | None = None
-    # NOTE (round-trip collision, PR #301 review): an AgentRecord.to_dict() also
-    # carries a field named `identifier` (its local id, e.g. "local:<uuid>"), which
-    # binds to the legacy `identifier=` param when a record is piped straight in.
-    # That's inert ONLY because this legacy branch requires BOTH namespace and id
-    # to be None — and a Tier-1 record always carries `namespace`, so the branch is
-    # skipped and the stray `identifier` is ignored. Do NOT loosen this guard to
-    # `id is None` alone: a piped record's local `identifier` would then override
-    # the intended (namespace, namespace_id) routing via _infer_namespace.
     if namespace is None and id is None:
-        if identifier is None:
-            return {
-                "error": (
-                    "evaluate_agent requires (namespace, id). Example: "
-                    "evaluate_agent(namespace='synpareia', id='did:synpareia:...')."
-                ),
-            }
-        deprecation = (
-            "evaluate_agent(identifier=...) is deprecated and will be removed "
-            "in v0.5. Call evaluate_agent(namespace=..., id=...) instead."
-        )
-        namespace = _infer_namespace(identifier)
-        id = identifier
+        return {
+            "error": (
+                "evaluate_agent requires (namespace, id). Example: "
+                "evaluate_agent(namespace='synpareia', id='did:synpareia:...')."
+            ),
+        }
 
     if not isinstance(namespace, str) or not namespace.strip():
         return {"error": "namespace must be a non-empty string"}
@@ -176,21 +153,11 @@ async def evaluate_agent(
             providers_skipped=providers_skipped,
         ),
     }
-    if deprecation is not None:
-        result["deprecation"] = deprecation
     return result
 
 
 def _has_control_chars(text: str) -> bool:
     return any(ord(c) < 0x20 or ord(c) == 0x7F for c in text)
-
-
-def _infer_namespace(identifier: str) -> str:
-    if identifier.startswith("did:synpareia:"):
-        return "synpareia"
-    if identifier.startswith("local:"):
-        return "local"
-    return "unknown"
 
 
 def _lookup_tier1(app: AppContext, namespace: str, id_: str) -> list[AgentRecord]:

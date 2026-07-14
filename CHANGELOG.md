@@ -5,6 +5,32 @@ All notable changes to `synpareia-trust-mcp` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-07-14
+
+### Removed
+
+- **BREAKING: removed the deprecated `evaluate_agent(identifier=...)` legacy
+  parameter** (deprecated since 0.4.0, two releases past its promised removal
+  window). Call `evaluate_agent(namespace=..., id=...)` — or pipe a Tier-1
+  record straight in via `namespace_id=...` — instead. The `deprecation` flag
+  the legacy form emitted on the response is gone with it.
+
+  | Old                                              | New                                                             |
+  | ------------------------------------------------ | --------------------------------------------------------------- |
+  | `evaluate_agent("alice")`                        | `evaluate_agent(namespace="moltbook", id="alice")`              |
+  | `evaluate_agent("did:synpareia:a1b2c3")`         | `evaluate_agent(namespace="synpareia", id="did:synpareia:a1b2c3")` |
+  | `evaluate_agent("T0ABC/U0123")` *(Slack)*        | `evaluate_agent(namespace="slack", id="T0ABC/U0123")`           |
+
+### Security
+
+- Bumped the transitive `click` pin (pulled via `mcp[cli]`/`uvicorn`) from
+  8.3.2 to 8.4.2 in `uv.lock` to clear **CVE-2026-7246** (command injection in
+  `click.edit()`, ≤8.3.2; fixed in 8.3.3). Not reachable from this server — we
+  never call `click.edit()` — and the published wheel is unaffected (click is
+  not a declared dependency, so a fresh install already resolves the fixed
+  line). This only tidies the committed dev/CI lockfile so the public repo does
+  not carry a flagged pin.
+
 ## [0.7.0] - 2026-07-03
 
 Privacy-completion release: makes the data-protection posture the prove/vet/bind
@@ -382,8 +408,8 @@ sparse-witness ratification).
   ```
 
   The legacy `evaluate_agent(identifier=...)` form still works for one
-  release and attaches a `deprecation` flag to the response. **It will
-  be removed in v0.5.** Migrate by passing explicit `namespace` + `id`:
+  release and attaches a `deprecation` flag to the response. **It was
+  removed in 0.8.0.** Migrate by passing explicit `namespace` + `id`:
 
   | Old                                              | New                                                             |
   | ------------------------------------------------ | --------------------------------------------------------------- |

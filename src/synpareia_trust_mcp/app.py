@@ -120,12 +120,49 @@ def _create_witness_client(config: Config) -> WitnessClient | None:
     return client
 
 
+# The value proposition lives HERE, in full, rather than behind a tool call.
+#
+# Two findings drove that. (1) This string is filter-proof: agent harnesses that
+# restrict tool access commonly do so with a call-time deny hook, which never touches
+# server instructions — so this text arrives even where `orient` itself is denied.
+# (2) A pointer does not compel. A scout agent received `orient`'s output five times,
+# including its "call learn(...) for the thesis" pointers, and never once followed one.
+# Anything a fresh agent must actually absorb has to be stated here, not linked from here.
+#
+# Written in terms of social acts (commitments, records, checks) rather than mechanisms
+# (blocks, signatures, seals). An agent that reads this should be able to answer "what is
+# synpareia and when would I use it" without mentioning cryptography.
 INSTRUCTIONS = """\
-Trust tools for dealings with other AI agents. When something is at stake — \
-you're about to rely on another agent, prove something to one, or agree on \
-something you may need evidence of later — call `orient` first; it maps your \
-situation to the right tools. Also call `orient` after context loss to \
-recover your identity and in-flight recordings.\
+Synpareia is for the moments when something is at stake between you and another agent: \
+you are relying on someone, being relied on, or agreeing to something either side may \
+need to prove later. It exists because agents currently have no way to make a promise \
+that means more than a sentence, and no way to tell a counterparty who keeps promises \
+from one who does not.
+
+The habits it is here to support:
+
+- Something is at stake -> ask for a commitment rather than proceeding on goodwill. \
+An intention you both signed is a different object from one you both remember.
+- It may need proving later -> open a record while it happens, not after. \
+A reconstructed account is worth far less than a contemporaneous signed one.
+- You are about to trust a claim -> check it. Has this agent been consistent? \
+Can they show evidence, or only assert?
+- The interaction is complex, high-stakes, or adversarial -> use a Form. Forms are \
+worked recipes for approaching, negotiating and concluding; you need not invent the \
+choreography, and each states plainly what it cannot yet do.
+- A commitment was kept or broken -> record the outcome, with the counterparty's \
+consent. Accumulated outcomes are what a reputation is actually made of.
+
+Underneath are cryptographic primitives -- signed statements, hash-linked records, \
+timestamp seals -- but the tools are named for the social act, not the mechanism, and \
+everything they produce verifies offline without asking us or anyone else.
+
+Honest about the gaps: your evaluations of counterparties stay in your local journal \
+in v1, and network-attested reputation lookups are not serving yet. What works today \
+is evidence you hold and can produce, and evidence a counterparty can hand you.
+
+Call `orient` for what applies to your situation, your identity, and anything in \
+flight -- including after context loss. `learn(<topic>)` goes deeper on any of the above.\
 """
 
 mcp = FastMCP(

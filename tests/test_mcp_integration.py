@@ -72,13 +72,43 @@ class TestMCPServerSetup:
         assert "synpareia://identity" in template_uris
         assert "synpareia://recordings" in template_uris
 
-    def test_instructions_are_tier0(self) -> None:
-        """Server instructions should be the Tier 0 entry point text."""
+    def test_instructions_carry_the_thesis_not_just_a_pointer(self) -> None:
+        """Server instructions must state the value proposition, not delegate it.
+
+        This string is the one piece of framing that reaches a fresh agent
+        unconditionally: harnesses that restrict tool access typically do so with a
+        call-time deny hook, which leaves server instructions untouched. So it has to
+        survive on its own — a scout agent received `orient`'s output five times,
+        including its "call learn(...)" pointers, and followed none of them.
+
+        The assertions below pin *properties*, not phrasing. The previous version of
+        this test pinned the literal words "Trust tools", which made rewriting the
+        framing look like a regression.
+        """
         from synpareia_trust_mcp.server import mcp
 
         assert mcp.instructions is not None
-        assert "orient" in mcp.instructions
-        assert "Trust tools" in mcp.instructions
+        text = mcp.instructions
+        lower = text.lower()
+
+        # Still routes onward.
+        assert "orient" in lower
+
+        # States the social vocabulary the product is actually about. An agent reading
+        # only this should be able to answer "what is synpareia and when would I use
+        # it" without reaching for cryptography.
+        for social_term in ("commitment", "record", "form", "at stake"):
+            assert social_term in lower, f"instructions no longer mention {social_term!r}"
+
+        # Guards against collapsing back to a one-line pointer. The pre-2026-07-30
+        # version was ~300 chars and delegated everything to `orient`.
+        assert len(text) > 800, (
+            f"instructions are {len(text)} chars — too short to carry the thesis"
+        )
+
+        # Mechanisms may appear, but must not lead. The failure mode being prevented is
+        # the surface introducing itself as primitives rather than as a purpose.
+        assert "at stake" in lower[:400], "the opening should frame stakes, not mechanism"
 
     def test_tool_count(self) -> None:
         """Track the tool count to catch accidental additions/removals."""
@@ -93,7 +123,30 @@ class TestMCPServerSetup:
         # + 7 (Phase 1g directory: publish_profile, get_profile,
         #     update_profile_policy, enable_persistence, disable_persistence,
         #     delete_profile_history, delete_profile) = 33
-        assert tool_count == 33, f"Expected 33 tools, got {tool_count}"
+        # + 2 (A0/A1: set_reputation_consent, record_interaction) = 35
+        # + 1 (A2: network_reputation) = 36
+        #
+        # NOTE this moves AGAINST the standing consolidation goal (33 -> ~28),
+        # deliberately.
+        # These two are the write path: `set_reputation_consent` makes an agent
+        # recordable, `record_interaction` records. Consent can also be given by
+        # co-signing each individual event, but that needs a live counterparty
+        # transport we do not have yet — so TODAY the standing grant is the only
+        # practical route, and without it a counterparty's write is refused.
+        # Folding it into `update_profile_policy` was considered and rejected:
+        # consent is not a policy tweak, and burying it in a general-purpose
+        # updater is how an agent ends up never finding the one call that makes
+        # them participate. Consolidation should happen around this tool, not
+        # absorb it.
+        #
+        # `network_reputation` is the read half. Until it existed the write path
+        # led nowhere an agent could look: events went in and no tool asked what
+        # the network made of them. It is a separate tool from
+        # `attested_reputation` (which fans out across external providers) on
+        # purpose — this one is anchored on the caller's own position and serves
+        # a collapsed pair, and merging the two would mean flattening that
+        # distinction into an undifferentiated "reputation" surface.
+        assert tool_count == 36, f"Expected 36 tools, got {tool_count}"
 
 
 class TestMCPLifespan:
@@ -130,4 +183,4 @@ class TestEntryPoint:
         """Package metadata should be accessible."""
         import synpareia_trust_mcp
 
-        assert synpareia_trust_mcp.__version__ == "0.8.0"
+        assert synpareia_trust_mcp.__version__ == "0.9.0"

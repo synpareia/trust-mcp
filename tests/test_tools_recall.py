@@ -322,3 +322,73 @@ class TestForgetCounterparty:
         assert result["ok"] is False
         assert result["forgotten"] is False
         assert "error" in result and "OSError" in result["error"]
+
+
+class TestEvaluationOnMissingRecordCarriesItsRecovery:
+    """The dead end a live agent actually hit.
+
+    `add_evaluation`'s docstring says to call `remember_counterparty` first. But
+    an agent that reaches the error has already read past the docstring — a
+    prerequisite stated only upstream of a failure is not available at the
+    moment it is needed. A live agent attempting its one reputation workflow got
+    "No record for identifier <name>" and stopped there (#142).
+
+    So the error response must carry the recovery, not just the diagnosis.
+    """
+
+    def test_error_names_the_prerequisite_tool(self, app_ctx) -> None:  # noqa: ANN001
+        from synpareia_trust_mcp.tools.recall import add_evaluation
+
+        ctx, _ = app_ctx
+        result = add_evaluation(identifier="nobody", text="a note", ctx=ctx)
+
+        assert "error" in result
+        recovery = result.get("recovery")
+        assert recovery, "the failure gives no way forward"
+        assert recovery["tool"] == "remember_counterparty"
+        assert "nobody" in recovery["why"]
+        assert "add_evaluation" in recovery["then"], "must say to retry the original call"
+
+    def test_error_is_machine_dispatchable_not_just_prose(self, app_ctx) -> None:  # noqa: ANN001
+        """A recovery an agent has to parse out of a sentence is a worse
+        affordance than one it can branch on. Pin the code separately from the
+        prose so rewording the message cannot silently drop it."""
+        from synpareia_trust_mcp.tools.recall import add_evaluation
+
+        ctx, _ = app_ctx
+        result = add_evaluation(identifier="nobody", text="a note", ctx=ctx)
+        assert result.get("code") == "no_such_counterparty"
+
+    def test_the_recovery_path_actually_works(self, app_ctx) -> None:  # noqa: ANN001
+        """Following the stated recovery must resolve the failure.
+
+        Otherwise this is a recovery hint that has never been walked — the same
+        class as an alerting path that has never fired.
+        """
+        from synpareia_trust_mcp.tools.recall import add_evaluation, remember_counterparty
+
+        ctx, _ = app_ctx
+        assert "error" in add_evaluation(identifier="wren", text="a note", ctx=ctx)
+
+        remembered = remember_counterparty(
+            namespace="forum", namespace_id="wren", display_name="wren", ctx=ctx
+        )
+        # NOTE: remember_counterparty returns the RECORD, while add_evaluation
+        # returns an {"ok": True, ...} envelope. Asserting `.get("ok")` here
+        # failed against correct code — the inconsistency is real but it is
+        # pre-existing surface shape, tracked under #67, not this slice's to fix.
+        assert "error" not in remembered, remembered
+        assert "wren" in remembered["display_names"]
+
+        # The naive retry — same string the agent used to record them — STILL
+        # fails, because the record's identifier is an opaque local:<uuid>.
+        # This is the second half of the dead end, and the reason the first
+        # version of the recovery text was wrong.
+        naive = add_evaluation(identifier="wren", text="a note", ctx=ctx)
+        assert "error" in naive
+        assert naive["code"] == "identifier_is_not_a_display_name"
+        assert remembered["identifier"] in naive["recovery"]["use_identifier"]
+
+        # Following the CORRECTED recovery resolves it.
+        retried = add_evaluation(identifier=remembered["identifier"], text="a note", ctx=ctx)
+        assert retried.get("ok"), retried

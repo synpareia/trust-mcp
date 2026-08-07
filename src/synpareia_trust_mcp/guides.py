@@ -2,11 +2,85 @@
 
 Each guide is ~1K tokens: concise enough to not blow up context,
 complete enough that an agent can operate within the area after reading it.
+
+Two kinds of guide live behind ``learn()``. The AREAS below are organised by
+CAPABILITY — what signing does, what the witness does, how to weigh a lookup.
+The Forms in ``forms.py`` are organised by SITUATION — whole interaction shapes
+with recipes. An agent who knows which tool they want is served by an area; an
+agent holding a situation is served by a Form. ``LEARNABLE`` is the union, so
+``learn()`` resolves both without the caller needing to know the difference.
 """
 
 from __future__ import annotations
 
+from synpareia_trust_mcp.forms import FORM_GUIDES, render_index
+
 AREA_GUIDES: dict[str, str] = {
+    "deciding-what-to-establish": """\
+# Deciding What to Establish
+
+## What this is about
+Every other area answers "how do I do X". This one answers "is X worth doing here,
+and which X?" — the step before you pick a tool.
+
+Most exchanges need no evidence at all. Reaching for a proof on every interaction is
+its own failure mode: it costs you and your counterparty effort, and it signals
+suspicion where none was warranted. The question is not "which tool" but "what, if
+anything, am I trying to be able to establish later?"
+
+## Three questions worth asking
+
+**1. What can I learn about this agent before I rely on them?**
+Start with `recall_counterparty` — your own history is the highest-quality evidence you
+have, because you generated it. Then `evaluate_agent` for what others have attested.
+If both come back empty, that IS the finding, and it points at question 2.
+
+**2. How do I structure THIS interaction so it yields evidence about their character?**
+This is the one most agents skip, and it is the one that compounds. An interaction you
+simply have leaves you knowing no more about the counterparty than before. An
+interaction structured to produce evidence leaves a record you can use next time —
+and gives them the same. Concretely: ask for a specific undertaking rather than a
+general assurance; get a judgement on record BEFORE the outcome is known; record an
+exchange you might need to refer back to.
+
+**3. How do I offer credible evidence about myself that a stranger can check?**
+`publish_profile` makes your identity checkable by someone who has never met you.
+`make_claim(witness=True)` signs a statement and hands back a `block_hash_hex`; passing that
+to `witness_seal_timestamp` is what gets you the seal. Both calls, then you have something to
+HAND to a counterparty who can verify it offline against that identity — stop after the first
+and you have proved authorship but not time. Note what this is not: nothing is published to a
+network and no history accumulates anywhere queryable — you carry your own evidence and
+present it. Note also the asymmetry: you cannot make a stranger trust you, but you can
+remove the excuse that they had no way to look.
+
+## The move most agents miss
+A judgement is only bankable if it was recorded before reality settled. "I said this
+would fail" is worth nothing after the failure; the same sentence timestamped
+beforehand is worth a great deal, because the gap between what you said and what a
+hedge would have said becomes observable. If you are about to commit to a view that
+events will test, that is the moment — not afterwards.
+
+## What none of this can do
+Be precise about what you are buying, because over-reading your own evidence is worse
+than not collecting it:
+- A signature proves AUTHORSHIP, not truth. A signed lie is still a lie, signed.
+- A witness timestamp proves a thing EXISTED by a time. It says nothing about who
+  authored it, whether it is true, or what it cost to produce.
+- A recording proves WHAT WAS SAID, not what was meant or whether it was honoured.
+- Reputation lookups tell you what others have ASSERTED. They are evidence about the
+  assertions, and only indirectly about the agent.
+- Absence of evidence about a counterparty is not evidence against them. Most agents
+  have no history anywhere yet.
+
+## Choosing
+If you cannot name what you would want to establish, you probably do not need a tool
+here. If you can name it, `orient()`'s start_here maps the common situations to the
+primitive that fits, and `learn('reasoning')` covers how to weigh what you get back.
+
+If your situation has a recognisable SHAPE — a promise, a prediction, a trial, a
+first-contact handshake — `learn('interaction-forms')` names it and gives the recipe.
+""",
+    "interaction-forms": render_index(),
     "trust-networks": """\
 # Trust Networks & Providers
 
@@ -17,9 +91,15 @@ The evaluate_agent tool queries all configured providers and returns a unified r
 
 ## Available providers
 
-**Synpareia network** (requires SYNPAREIA_NETWORK_URL): Verified interaction history, \
-proof-of-thought pass rates, mutual attestation records. Highest confidence — based on \
-cryptographic proof, not self-reported data.
+**Synpareia network** (requires SYNPAREIA_NETWORK_URL): **not yet serving reputation.** \
+The attested-reputation read is designed but unbuilt — no directory deployment exposes \
+it — so this provider reports `unavailable` for every identifier today, at *low* \
+confidence. It used to report `not_found` at high confidence, which read as a finding \
+about the counterparty rather than a gap in our own service. Treat an `unavailable` \
+line as carrying no information either way — it is not evidence of a bad counterparty, \
+and it is not evidence of a good one. `not_found` from this provider will mean \
+something once the read lands: that the directory was asked and answered. When it does land it will be the highest-confidence source \
+here, because it will rest on cryptographic proof rather than self-report.
 
 **Moltbook** (requires SYNPAREIA_MOLTBOOK_API_URL): Social reputation for AI agents — \
 karma, post history, follower count, account age, claimed status. Useful but gameable. \
@@ -472,3 +552,15 @@ You stay on the MCP when you're an agent handling a counterparty situation — \
 proving, vetting, or binding in the moment. That's what this surface is for.\
 """,
 }
+
+
+LEARNABLE: dict[str, str] = {**AREA_GUIDES, **FORM_GUIDES}
+"""Everything ``learn()`` resolves: capability areas plus individual Forms.
+
+Form keys are deliberately NOT in ``AREAS_OF_CONCERN``. Listing ten more
+entries in ``orient()`` would restore exactly the table-of-contents problem the
+orientation rework exists to fix; the ``interaction-forms`` area is the one
+entry point, and it indexes them. They remain directly addressable — and
+``learn()``'s unknown-area error lists them — so nothing is hidden, just not
+front-loaded.
+"""

@@ -73,8 +73,14 @@ class TestProfileFilePermissions:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Overwriting an existing profile.json must never leave it world-
-        readable mid-write. We check this by hooking open() to observe the
-        mode passed on creation."""
+        readable mid-write. The write now goes through an atomic temp-file +
+        rename (fsutil.atomic_write_bytes): the bytes are opened into a sibling
+        `profile.json.tmp` with mode 0o600, then atomically renamed over
+        profile.json — so the final file inherits 0o600 and there is never a
+        permissive-mode window (the property is strengthened: profile.json is
+        never *created* mid-write at all, it is replaced by an atomic rename).
+        We hook open() to observe the mode used for whichever file becomes
+        profile.json (the temp), and confirm the final mode."""
         data_dir = tmp_path / "synpareia"
         data_dir.mkdir()
 
@@ -84,10 +90,13 @@ class TestProfileFilePermissions:
 
         observed_modes: list[int] = []
         real_open = os.open
-        target = str(data_dir / "profile.json")
+        profile_path = data_dir / "profile.json"
+        # The file that BECOMES profile.json is the atomic temp; match both so
+        # the guard keeps meaning under the temp-file mechanism.
+        watched = {str(profile_path), str(profile_path) + ".tmp"}
 
         def recording_open(*args, **kwargs):  # type: ignore[no-untyped-def]
-            if args and str(args[0]) == target and len(args) >= 3:
+            if args and str(args[0]) in watched and len(args) >= 3:
                 observed_modes.append(args[2])
             return real_open(*args, **kwargs)
 
@@ -107,7 +116,9 @@ class TestProfileFilePermissions:
 
         assert observed_modes, "no open() call observed — test wiring issue"
         for m in observed_modes:
-            assert m == 0o600, f"profile.json created with permissive mode {oct(m)}"
+            assert m == 0o600, f"profile bytes created with permissive mode {oct(m)}"
+        # The atomically-renamed final file must end at 0o600, no permissive window.
+        assert profile_path.stat().st_mode & 0o777 == 0o600
 
         # Reload should still work (sanity)
         pm3 = ProfileManager(data_dir)

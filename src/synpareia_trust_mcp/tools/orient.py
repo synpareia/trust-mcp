@@ -7,9 +7,105 @@ from typing import Any
 from mcp.server.fastmcp import Context
 
 from synpareia_trust_mcp.app import AppContext, mcp
-from synpareia_trust_mcp.guides import AREA_GUIDES
+from synpareia_trust_mcp.forms import FORM_GUIDES
+from synpareia_trust_mcp.guides import AREA_GUIDES, LEARNABLE
+
+# Keyed on situations as they ARRIVE, not on conclusions already reached.
+#
+# The earlier version keyed entries like "need to prove your side of an
+# interaction later" — which presupposes the agent has ALREADY decided that
+# evidence matters here. An agent that never asks "should this exchange carry
+# evidence at all?" never reaches the table, and ends up holding a
+# witness-timestamping hammer looking for a nail. A live agent using this
+# package daily for a fortnight described exactly that.
+#
+# So each value now names WHAT YOU WOULD BE ESTABLISHING before naming a tool.
+# The tool is the last step, not the first.
+START_HERE: dict[str, str] = {
+    "another agent claimed something": (
+        "Establish: is this really from them, and was it fixed before now? "
+        "-> verify_claim (signature / identity / commitment) or decode_signed "
+        "(self-verifying envelope)"
+    ),
+    "about to rely on another agent": (
+        "Establish: what is already known about them? "
+        "-> recall_counterparty (your own history) + evaluate_agent (other sources). "
+        "If the answer is 'nothing known', that is itself the finding — consider "
+        "making this interaction PRODUCE evidence rather than only consume it."
+    ),
+    "one of you offered to do something for the other": (
+        "Establish: what exactly was undertaken, in terms both sides can check later? "
+        "-> make_claim on the specific undertaking. An undertaking nobody recorded is "
+        "not evidence about anyone. learn('form-negotiated-promise') for the full "
+        "recipe and for what this toolkit cannot yet enforce."
+    ),
+    "you are about to give a judgement that reality will later settle": (
+        "Establish: that you held it BEFORE the outcome was known. "
+        "-> make_claim(witness=True), THEN witness_seal_timestamp with the returned "
+        "block_hash_hex — the first call signs, the second is what binds the time. "
+        "The same opinion timestamped afterwards proves nothing. "
+        "learn('form-witnessed-prediction')."
+    ),
+    "this exchange could be disputed later": (
+        "Establish: what was actually said, in order. "
+        "-> recording_start -> recording_append per exchange -> recording_end -> "
+        "recording_proof"
+    ),
+    "two of you must assess something independently": (
+        "Establish: that neither of you anchored on the other. "
+        "-> prove_independence (commit-reveal), optionally via witness_submit_blind"
+    ),
+    "a stranger has no reason to believe you": (
+        "Establish: one consistent identity with a checkable history. "
+        "-> publish_profile (directory card), then make_claim(witness=True) "
+        "followed by witness_seal_timestamp for each statement you want "
+        "time-bound — the seal is the second call, not the flag."
+    ),
+    "not sure any of this applies": (
+        "That is a real answer and often the right one. Most exchanges need no "
+        "evidence at all. learn('deciding-what-to-establish') is the short version "
+        "of when it is worth the trouble; learn('interaction-forms') names the "
+        "shapes that usually do."
+    ),
+    "lost context / fresh session": (
+        "you're in the right place — identity, services, and any in-flight recordings are below"
+    ),
+}
+
 
 AREAS_OF_CONCERN = [
+    # FIRST deliberately. Every other area answers "how do I do X"; this one
+    # answers "is X worth doing here, and which X?" — the step that has to happen
+    # before tool selection and that nothing in this package used to serve.
+    {
+        "area": "deciding-what-to-establish",
+        "name": "Deciding What to Establish",
+        "brief": (
+            "Whether an interaction needs evidence at all, and which kind — the step "
+            "before reaching for a tool."
+        ),
+        "when": (
+            "At the start of an interaction that matters, or when you notice you are "
+            "about to rely on something you cannot check."
+        ),
+    },
+    # SECOND deliberately, and for the same reason the area above is first.
+    # Once you know what you want to establish, the next question is what the
+    # whole interaction looks like — not which function to call. Every area
+    # below this one is organised by capability; this one is organised by
+    # situation, which is the axis an agent actually arrives on.
+    {
+        "area": "interaction-forms",
+        "name": "Interaction Forms",
+        "brief": (
+            "Recognisable interaction shapes with recipes — promises, predictions, "
+            "probes, trials, first-contact handshakes."
+        ),
+        "when": (
+            "Your situation has a familiar shape and you want the whole recipe, "
+            "including how it gets gamed, rather than a single tool."
+        ),
+    },
     {
         "area": "trust-networks",
         "name": "Trust Networks & Providers",
@@ -140,24 +236,48 @@ def orient(ctx: Context) -> dict[str, Any]:
         },
     }
 
+    # ORDERING AND NAMING HERE ARE LOAD-BEARING, not cosmetic.
+    #
+    # The previous shape listed four named `offline` bullets first, then a
+    # two-item `network` list in which the whole reputation layer appeared ONCE,
+    # at the end, in parentheses: "Synpareia network (reputation, discovery)".
+    #
+    # An agent that parses structure before prose reads that as: substrate =
+    # the product, reputation = a footnote. A live agent using this package for
+    # a fortnight did exactly that, concluded synpareia was an attestation
+    # library with a weak reputation add-on, and argued it back to us across
+    # two sessions. Its own diagnosis: "the substrate gets four named bullets;
+    # the apex appears once, at the end of a two-item list, IN PARENTHESES."
+    #
+    # So: network first, each capability named in its own right, and an
+    # explicit statement of which layer is the point. The primitives are what
+    # you build evidence WITH; they are not what the product is FOR.
+    network_capabilities = []
+    if config.network_url:
+        network_capabilities.append(
+            "Reputation — record how a dealing went (record_interaction) and read "
+            "back what the network can tell you about an agent, anchored on your own "
+            "position in it (network_reputation). Numbers only: the substance of "
+            "your evaluations stays in your local journal"
+        )
+        network_capabilities.append(
+            "Directory — publish an identity a stranger can check, and look up theirs"
+        )
+    if config.witness_url:
+        network_capabilities.append(
+            "Witness attestation (timestamp seals, state seals, blind conclusions)"
+        )
+    if config.moltbook_api_url:
+        network_capabilities.append("Moltbook reputation lookups")
+    if config.moltrust_api_key:
+        network_capabilities.append("MolTrust reputation lookups")
+
     offline_capabilities = [
         "Identity (signing, verification, DID operations)",
         "Conversation recording (hash-linked chains)",
         "Commitments (seal-then-reveal for independent assessment)",
         "Offline seal verification",
     ]
-
-    network_capabilities = []
-    if config.witness_url:
-        network_capabilities.append(
-            "Witness attestation (timestamp seals, state seals, blind conclusions)"
-        )
-    if config.network_url:
-        network_capabilities.append("Synpareia network (reputation, discovery)")
-    if config.moltbook_api_url:
-        network_capabilities.append("Moltbook reputation lookups")
-    if config.moltrust_api_key:
-        network_capabilities.append("MolTrust reputation lookups")
 
     # Active state
     active_conversations = app.conversation_manager.list_active()
@@ -178,38 +298,27 @@ def orient(ctx: Context) -> dict[str, Any]:
     # Situation map FIRST: orient is called in the moment ("Rourke just
     # asked me to co-review a contract"), so the routing serves the moment
     # before the inventory. Keys are situations, values are the tools.
-    start_here = {
-        "another agent claimed something": (
-            "verify_claim (signature / identity / commitment) or decode_signed "
-            "(self-verifying envelope)"
-        ),
-        "about to rely on another agent": (
-            "recall_counterparty (your own history) + evaluate_agent (multi-source reputation)"
-        ),
-        "need to prove your side of an interaction later": (
-            "recording_start -> recording_append per exchange -> recording_end -> recording_proof"
-        ),
-        "need to prove authorship, or that you knew something by a time": (
-            "make_claim (witness=True returns a witness_seal_timestamp "
-            "follow-up for an independent timestamp seal)"
-        ),
-        "mutual assessment that must be provably independent": (
-            "prove_independence (commit-reveal), optionally via witness_submit_blind"
-        ),
-        "want strangers to be able to verify who you are": (
-            "publish_profile (directory card) + make_claim(witness=True) for witnessed history"
-        ),
-        "lost context / fresh session": (
-            "you're in the right place — identity, services, and any in-flight recordings are below"
-        ),
-    }
+    # START_HERE is module-level so it can be asserted on directly (see
+    # tests/test_orientation_layer.py). A literal buried in a function body
+    # is only reachable by executing the whole tool, which is why the L0
+    # property went unpinned before.
 
     return {
-        "start_here": start_here,
+        "start_here": START_HERE,
         "identity": identity,
         "services": services,
         "capabilities": {
-            "offline": offline_capabilities,
+            # Key order is part of the message — see the comment above the
+            # lists. `network` precedes `offline` deliberately, and dict
+            # insertion order survives JSON serialisation to the caller.
+            "what_this_is_for": (
+                "The network layer is the point: publishing statements a counterparty "
+                "can check, and looking up what has been attested about one. The "
+                "offline primitives are the substrate that makes those statements "
+                "non-fake — signing, timestamping and commit-reveal are what you "
+                "build the evidence WITH, not what this is FOR. An agent that uses "
+                "only the offline half has a very good notebook and no counterparty."
+            ),
             "network": network_capabilities
             if network_capabilities
             else [
@@ -220,8 +329,10 @@ def orient(ctx: Context) -> dict[str, Any]:
                 "Network services disabled by configuration. All trust "
                 "primitives keep working offline. Unset SYNPAREIA_NETWORK_URL / "
                 "SYNPAREIA_WITNESS_URL (or set them to a URL) to re-enable "
-                "discovery, portable reputation, and third-party attestation."
+                "discovery, the reputation loop (contribute interaction events, "
+                "read back an anchored score), and third-party attestation."
             ],
+            "offline": offline_capabilities,
         },
         "active_state": {
             "active_recordings": len(active_conversations),
@@ -235,14 +346,20 @@ def orient(ctx: Context) -> dict[str, Any]:
 
 @mcp.tool()
 def learn(area: str) -> dict[str, Any]:
-    """Load a detailed guide for a specific area of concern. Areas: trust-networks, verification, claims, recording, witness-attestation, counterparty, reasoning, looking-up, setup, identity-lifecycle, under-the-hood."""
-    guide = AREA_GUIDES.get(area)
+    """Load a detailed guide for one area, or the recipe for one interaction Form. Areas: deciding-what-to-establish, interaction-forms, trust-networks, verification, claims, recording, witness-attestation, counterparty, reasoning, looking-up, setup, identity-lifecycle, under-the-hood. Forms are keyed 'form-*' and indexed by learn('interaction-forms')."""
+    guide = LEARNABLE.get(area)
     if guide is None:
-        available = sorted(AREA_GUIDES.keys())
+        # Split the two kinds in the error rather than returning one flat list.
+        # An agent that mistyped an area name is not helped by ten form keys
+        # mixed in, and vice versa.
         return {
             "error": f"Unknown area: '{area}'",
-            "available_areas": available,
-            "hint": "Call orient() to see all areas with descriptions.",
+            "available_areas": sorted(AREA_GUIDES.keys()),
+            "available_forms": sorted(FORM_GUIDES.keys()),
+            "hint": (
+                "Call orient() to see all areas with descriptions, or "
+                "learn('interaction-forms') to see the Forms indexed by situation."
+            ),
         }
     return {
         "area": area,
@@ -338,9 +455,13 @@ def _get_next_steps(
         # an unset default.
         steps.append(
             "The synpareia network is disabled by configuration "
-            "(SYNPAREIA_NETWORK_URL). The trust primitives keep working offline; "
-            "re-enabling the network adds a discoverable profile and portable "
-            "reputation that carries across counterparties."
+            "(SYNPAREIA_NETWORK_URL). The trust primitives keep working offline — "
+            "including portable reputation, since a signed attestation a "
+            "counterparty hands you verifies without asking anyone. Re-enabling "
+            "adds a discoverable profile and the reputation loop: contribute how a "
+            "dealing went, and read back what the network can tell you about an "
+            "agent. The substance of your evaluations stays in your local journal "
+            "either way — what travels is a magnitude and a valence."
         )
     elif not published:
         # Network reachable but the agent hasn't joined yet — the funnel

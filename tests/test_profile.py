@@ -60,6 +60,20 @@ class TestProfilePersistence:
         assert profile1.public_key == profile2.public_key
         assert profile1.private_key == profile2.private_key
 
+    def test_save_is_atomic_leaving_no_temp_residue(self, tmp_data_dir: Path) -> None:
+        # _save_profile now writes via a temp file + atomic rename (fsutil), so a
+        # crash can't leave a truncated profile.json; a clean run leaves no *.tmp.
+        pm = ProfileManager(tmp_data_dir)
+        pm.ensure_profile()
+        assert list(tmp_data_dir.glob("*.tmp")) == []
+        # Re-saving a fresh keypair over the existing file replaces it cleanly.
+        new_profile = synpareia.generate()
+        pm._save_profile(tmp_data_dir / "profile.json", new_profile)
+        assert list(tmp_data_dir.glob("*.tmp")) == []
+        reloaded = ProfileManager(tmp_data_dir).ensure_profile()
+        assert reloaded.id == new_profile.id
+        assert (tmp_data_dir / "profile.json").stat().st_mode & 0o777 == 0o600
+
     def test_newly_generated_flag_true_only_on_fresh_mint(self, tmp_data_dir: Path) -> None:
         # First run mints a keypair — the first-run disclosure (GDPR §6) fires.
         pm1 = ProfileManager(tmp_data_dir)

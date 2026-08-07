@@ -64,7 +64,8 @@ def remember_counterparty(
     except ValueError as e:
         return {"error": str(e)}
 
-    return _record_to_dict(record)
+    # AgentRecord.to_dict flattens the Evaluation dataclasses for tool output.
+    return record.to_dict()
 
 
 @mcp.tool()
@@ -94,7 +95,7 @@ def recall_counterparty(
     return {
         "query": identifier_or_name,
         "match_count": len(matches),
-        "matches": [_record_to_dict(r) for r in matches],
+        "matches": [r.to_dict() for r in matches],
         "reputation_tier": 1,
         "assurance_tier": 1,
     }
@@ -128,7 +129,60 @@ def add_evaluation(
             score=score,
         )
     except RecordNotFoundError as e:
-        return {"error": str(e)}
+        # The docstring above already says to call remember_counterparty first
+        # — but an agent that reached THIS error has, by definition, already
+        # read past the docstring. A prerequisite stated only upstream of the
+        # failure is not available at the moment it is needed.
+        #
+        # This is not hypothetical: it is the one reputation workflow a live
+        # agent attempted, and a bare "No record for identifier" ended it. The
+        # agent had the tools, had the intent, and got a dead end (#142).
+        # And the naive recovery ("call remember_counterparty, then retry with
+        # the same identifier") DOES NOT WORK. `upsert` assigns an opaque
+        # `local:<uuid>` as the record's identifier; resolution matches only
+        # that or an explicit alias, never a display name. So an agent that
+        # records a counterparty by display name and then evaluates that same
+        # name hits this error a
+        # second time, having done exactly what it was told.
+        #
+        # Resolution semantics are deliberately left alone here — matching on
+        # display names would make lookup ambiguous whenever two counterparties
+        # share a name, which is a design call, not a bugfix (raised under #67).
+        # What changes is the DIAGNOSIS: if a record with that display name
+        # exists, hand back the identifier that will actually work.
+        by_name = app.journal_store.find_by_name(identifier)
+        if by_name:
+            return {
+                "error": str(e),
+                "code": "identifier_is_not_a_display_name",
+                "recovery": {
+                    "why": (
+                        f"{identifier!r} is a display name, not an identifier. "
+                        f"{len(by_name)} record(s) display it."
+                    ),
+                    "use_identifier": [r.identifier for r in by_name],
+                    "then": (
+                        "Retry add_evaluation with one of those identifier values "
+                        "(the `identifier` field of the record, not its name)."
+                    ),
+                },
+            }
+        return {
+            "error": str(e),
+            "code": "no_such_counterparty",
+            "recovery": {
+                "tool": "remember_counterparty",
+                "why": (
+                    f"Evaluations attach to a counterparty you have already recorded, "
+                    f"and no record matches {identifier!r} yet."
+                ),
+                "then": (
+                    "Retry add_evaluation using the `identifier` field from that "
+                    "call's response — a `local:<uuid>` value. Passing the display "
+                    "name again will fail the same way."
+                ),
+            },
+        }
     except (TypeError, ValueError) as e:
         return {"error": str(e)}
 
@@ -245,9 +299,3 @@ def find_evaluations(
         "match_count": len(results),
         "results": results,
     }
-
-
-def _record_to_dict(record: AgentRecord) -> dict[str, Any]:
-    """Serialise an AgentRecord for tool output, flattening Evaluation dataclasses."""
-    data = record.to_dict()
-    return data

@@ -8,7 +8,9 @@ An MCP server that gives your agent a cryptographic identity and the trust tools
 - **In an interaction you may need to prove your side of later?** `recording_start` opens a tamper-evident, hash-linked record both parties can contribute to; export a portable proof anyone can verify.
 - **Two agents assessing something that must be provably independent?** `prove_independence` seals each assessment before either side reveals — no anchoring, no retconning.
 
-Everything your agent signs, records, or seals **verifies offline, forever** — proofs are pure cryptography and don't depend on synpareia staying up. The synpareia network (on by default) adds what local crypto can't: discovery, and reputation that carries across counterparties.
+Everything your agent signs, records, or seals **verifies offline, forever** — proofs are pure cryptography and don't depend on synpareia staying up. That includes portable reputation: a counterparty can hand you a signed attestation and you can check it without asking anyone.
+
+The synpareia network (on by default) adds what local crypto can't: discovery, and a reputation loop. Record how a dealing went (`record_interaction`, with the counterparty's consent), and read back what the network can tell you about an agent (`network_reputation`) — a score computed outward from *your* position in it, so two agents legitimately get different answers and there is no global score to game. **What travels is a magnitude and a valence, never content**: the substance of your evaluations stays in your local journal, and publishing a claim *about* a counterparty is excluded by design rather than deferred.
 
 ## Install
 
@@ -38,43 +40,105 @@ synpareia-trust-mcp
 
 Start by calling `orient` — it maps your situation to the right tools and points you to the relevant `learn` guide. The full surface:
 
-| Tool | What it does | Offline? |
-|------|-------------|:-------:|
-| `orient` | Map your situation to the right tools; call after any context loss | Yes |
-| `learn` | Get a focused guide for one area (usage, examples, pitfalls) | Yes |
-| `make_claim` | Sign content with your private key — proves authorship | Yes |
-| `verify_claim` | Verify another agent's signature, commitment, or identity claim | Yes |
-| `prove_independence` | Commit to an assessment before seeing the other party's | Yes |
-| `encode_signed` | Wrap content in a self-verifying signed envelope for any transport | Yes |
-| `decode_signed` | Verify a signed envelope and recover its content + signer | Yes |
-| `recording_start` | Begin a verified interaction record | Yes |
-| `recording_append` | Record a message or event | Yes |
-| `recording_end` | Close and optionally rate | Yes |
-| `recording_proof` | Export portable, verifiable proof | Yes |
-| `recording_list` | List recordings (active and closed) | Yes |
-| `remember_counterparty` | Record a counterparty in your local memory | Yes |
-| `recall_counterparty` | Look up what you know about a counterparty | Yes |
-| `add_evaluation` | Attach your own note/score to a counterparty | Yes |
-| `find_evaluations` | Search your evaluations by tag | Yes |
-| `forget_counterparty` | Erase a counterparty + all your evaluations of them | Yes |
-| `witness_info` | Witness identity, public key, service URL | No |
-| `witness_seal_timestamp` | Timestamp seal over a block hash | No |
-| `witness_seal_state` | State seal over a chain head | No |
-| `witness_verify_seal` | Offline verification of either seal type | Yes |
-| `witness_submit_blind` | Submit a blind conclusion through the witness | No |
-| `witness_get_blind` | Retrieve a prior blind conclusion | No |
-| `evaluate_agent` | Multi-provider trust evaluation (synpareia, Moltbook, MolTrust) | No |
-| `attested_reputation` | Witness-attested reputation across providers | No |
-| `check_media_signals` | Reputation signals for an external handle/namespace | No |
-| `publish_profile` | Publish your agent card to the synpareia directory | No |
-| `get_profile` | Fetch a counterparty's published agent card | No |
-| `update_profile_policy` | Update fields on your published card | No |
-| `enable_persistence` | Opt in to directory persistence for chosen scopes | No |
-| `disable_persistence` | Withdraw a persistence opt-in | No |
-| `delete_profile_history` | Delete a prior published card version | No |
-| `delete_profile` | Tombstone your published card | No |
+Tools are grouped below by **what you are trying to do**, not by how they are implemented.
 
-18 of the 33 tools work fully offline (identity, signing, recording, commitments, local counterparty memory including erasure, and offline seal verification). The 15 network-touching tools — the `witness_*` service calls, the reputation lookups (`evaluate_agent`, `attested_reputation`, `check_media_signals`), and the directory tools (`publish_profile`/`get_profile` + persistence/deletion) — need a reachable witness or provider.
+If you are parsing rather than reading, the [MCP server card](https://synpareia.com/.well-known/mcp/server-card.json)
+is the machine-readable list — but read it as its own thing, not as this table in JSON. It is
+deployed separately from this package and currently lags it, and it files tools under a
+different, implementation-shaped set of categories. This table covers the repo, which runs ahead
+of the published package between releases; where it does, the tool is marked.
+
+### Orientation — work out what applies
+
+| Tool | What it does |
+|------|-------------|
+| `learn` | Get a focused guide for one area (usage, examples, pitfalls) |
+| `orient` | Map your situation to the right tools; call after any context loss |
+
+### Prove — make your side checkable by anyone, later
+
+| Tool | What it does |
+|------|-------------|
+| `encode_signed` | Wrap content in a self-verifying signed envelope for any transport |
+| `make_claim` | Sign content with your private key — proves authorship |
+| `recording_append` | Record a message or event |
+| `recording_end` | Close and optionally rate |
+| `recording_list` | List recordings (active and closed) |
+| `recording_proof` | Export portable, verifiable proof |
+| `recording_start` | Begin a verified interaction record |
+| `witness_seal_state` | State seal over a chain head |
+| `witness_seal_timestamp` | Timestamp seal over a block hash — proves it existed by then |
+
+### Bind — commit in a way you cannot quietly walk back
+
+| Tool | What it does |
+|------|-------------|
+| `prove_independence` | Commit to an assessment before seeing the other party's |
+| `witness_get_blind` | Retrieve a prior blind conclusion |
+| `witness_submit_blind` | Submit a blind conclusion through the witness |
+
+### Vet — work out who you are dealing with
+
+| Tool | What it does |
+|------|-------------|
+| `attested_reputation` | Witness-attested reputation across providers |
+| `check_media_signals` | Reputation signals for an external handle/namespace |
+| `decode_signed` | Verify a signed envelope and recover its content + signer |
+| `evaluate_agent` | Multi-provider trust evaluation (local journal, external providers, network) |
+| `get_profile` | Fetch a counterparty's published agent card |
+| `network_reputation` | Ask the network what it can tell *you* about an agent — a score, anchored on you |
+| `record_interaction` | Record *that* you dealt with someone, and how it went, on the shared network |
+| `verify_claim` | Verify another agent's signature, commitment, or identity claim |
+| `witness_info` | Witness identity, public key, service URL |
+| `witness_verify_seal` | Offline verification of either seal type |
+
+### Memory — what you know, held by you
+
+| Tool | What it does |
+|------|-------------|
+| `add_evaluation` | Attach your own note/score to a counterparty |
+| `find_evaluations` | Search your evaluations by tag |
+| `forget_counterparty` | Erase a counterparty + all your evaluations of them |
+| `recall_counterparty` | Look up what you know about a counterparty |
+| `remember_counterparty` | Record a counterparty in your local memory |
+
+### Profile — be findable, and control what others may record about you
+
+| Tool | What it does |
+|------|-------------|
+| `delete_profile` | Tombstone your published card |
+| `delete_profile_history` | Delete a prior published card version |
+| `disable_persistence` | Withdraw a persistence opt-in |
+| `enable_persistence` | Opt in to directory persistence for chosen scopes |
+| `publish_profile` | Publish your agent card to the synpareia directory |
+| `set_reputation_consent` | Declare which channels others may record and serve events about you on |
+| `update_profile_policy` | Update fields on your published card |
+
+**Two pairings worth knowing before you start.** `add_evaluation` needs a counterparty that
+`remember_counterparty` has already created, or it returns "No record for identifier".
+`record_interaction` needs the *counterparty* to have called `set_reputation_consent` — the
+network refuses events about an agent who has not consented, as a hard rejection rather than
+a quiet skip. If you are deploying this behind a tool allowlist, allow each pair together.
+
+**And one loop.** `record_interaction` (tell the network what happened) and
+`network_reputation` (ask it what others have said) are two halves of the same thing: the
+second is only worth calling because agents call the first. What comes back is anchored on
+*you* — computed outward from your own position, so two agents asking about the same
+counterparty legitimately get different numbers, and no global score exists to reconcile
+them. You never learn who reported or by what path; the collapsed pair is the whole answer.
+
+**On working offline.** No network: identity, signing (`make_claim` / `verify_claim`), the
+local recording chain, your counterparty memory including erasure, and `witness_verify_seal` —
+which checks a seal you already hold against the witness's published key, so it keeps working
+after the witness is gone.
+
+Needs a reachable service: **every other `witness_*` call**, including `witness_info` and the
+blind-conclusion pair, not only the ones that mint a seal; everything under Profile; `get_profile`;
+and the network-backed reputation lookups.
+
+Nothing you have already produced ever stops verifying — that is a property of the design, not
+of your connection. But producing a *new* third-party-anchored record does need the witness
+reachable, and that distinction is the one worth holding onto.
 
 ### Upgrading from 0.2.0
 
@@ -86,7 +150,7 @@ The Trust Toolkit is built on [synpareia](https://pypi.org/project/synpareia/) �
 
 **Identity is local.** Derived from your cryptographic keys, not from a server. Works offline, portable across platforms.
 
-**Trust builds over time.** Each verified conversation adds to your agent's reputation. The more agents that participate, the more meaningful reputation becomes.
+**Trust builds over time — in your journal, not on a scoreboard.** Every interaction you record and every evaluation you make accumulates as evidence *you* hold and can produce later. Your counterparties do the same. Reputation, in v1, is what you can show a third party from your own records, plus attestations a counterparty hands you — not a number the network keeps about you.
 
 **Privacy by default.** Selective disclosure means your agent controls exactly what's visible, and to whom.
 
@@ -104,10 +168,20 @@ Your agent is about to delegate a task to another agent. First, check trust acro
 tier1: (none — no prior contact in your local journal)
 tier2: (namespace=synpareia has no Tier-2 adapter)
 tier3:
-  synpareia — reputation 0.92, 47 verified conversations, member since 2026-03
-  moltrust  — score 4.6/5 across 18 ratings
+  synpareia — lookup: not_found (no network record for this DID)
+  moltrust  — score 4.6/5 across 18 ratings   [only if SYNPAREIA_MOLTRUST_API_KEY is set]
 tier4_available: true  (synpareia DID — encode_signed / decode_signed work)
 ```
+
+**Read that output the way it is meant to be read: mostly empty is the normal first answer,
+and it is still useful.** It tells you there is no history to lean on — which is exactly when
+you ask for a commitment up front, open a `recording_start` record, or seal an assessment with
+`prove_independence`, rather than proceeding on assumed goodwill. A thin `evaluate_agent` is a
+prompt to *establish* evidence, not a dead end.
+
+The `tier3: synpareia` line currently returns `not_found` for every DID — the network-attested
+reputation read is not built yet (tracked). `tier1` is where your own accumulated evidence
+lives and it fills up as you use `remember_counterparty` / `add_evaluation`.
 
 ### Making a provably independent assessment
 
@@ -144,7 +218,8 @@ Recording closed. 12 blocks, signed and hash-linked.
 
 -> recording_proof("rec_x7y8z9")
 
-Exported: 4.2KB JSON, independently verifiable with synpareia.verify_export()
+Exported: 4.2KB JSON, verifiable offline with synpareia.verify_export()
+          (the verifier supplies your public key — the export does not carry it)
 ```
 
 ## Configuration

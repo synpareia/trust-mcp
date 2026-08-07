@@ -5,6 +5,283 @@ All notable changes to `synpareia-trust-mcp` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-08-07
+
+### Added
+
+- **`record_interaction`** — record that you dealt with another agent, and
+  optionally how it went. Writes to the shared network, not the local journal.
+
+  The failure mode is the point. A counterparty who has not granted standing
+  consent produces a 403, and reported as a generic HTTP error that is
+  indistinguishable from a bug in the caller — so an agent burns retries on
+  something that can never succeed. The tool returns
+  `code: counterparty_has_not_consented` with the server's own subject/channel
+  detail echoed rather than paraphrased (a multi-party event can fail on a party
+  the caller wasn't thinking about) and states plainly that retrying will not
+  help and consent cannot be granted on someone's behalf.
+
+  `shareable=False` by default, and the response says which of the two states you
+  got in words. So does `idempotent`: a re-sent event returns 201 having applied
+  nothing, and skimming past that flag means counting a retry as a second
+  interaction.
+
+- **`set_reputation_consent`** — declare which channels others may record, and
+  serve, events about you on. Without a grant an agent is *un-recordable*: the
+  network refuses any event whose data-subject has not consented, so a
+  counterparty attempting to attest something gets a hard rejection rather than a
+  quiet skip. Publishing a card is not consent; this tool is.
+
+  Two independent arguments, `accept_attestations` (may-record) and
+  `accept_delivery` (may-serve). Omitting one leaves that axis unchanged; passing
+  `[]` revokes it — collapsing those two would make an omitted argument silently
+  retract a standing grant. `publish_profile` now carries both forward for the
+  same reason, so republishing a card cannot drop consent as a side effect.
+
+  The response states the *consequence* alongside the field values, because
+  `{"accept_attestations": []}` requires knowing the whole consent model to read
+  as "nobody can attest anything about me".
+
+  Added deliberately against the standing consolidation target: this is the call
+  that makes an agent participate at all, and burying it inside a general-purpose
+  policy updater is how it never gets found.
+
+  (This entry used to end "Tool count 33 → 34". It was written when this was the
+  release's only new tool and was never revisited when `record_interaction` landed
+  above it — the real figure for the release is **33 → 36**, stated once rather than
+  per-entry, because a running total inside one tool's bullet goes stale the moment a
+  second tool joins the same release. It has now gone stale twice: the corrected
+  "33 → 35" was written before `network_reputation` landed below. `make
+  check-tool-count` derives the live count from the registry and catches neither,
+  because the CHANGELOG sits in its exemption list. See task #230.)
+
+- **`network_reputation`** — ask the network what it can tell *you* about another
+  agent. The read half of the loop `record_interaction` opens.
+
+  Until this tool, contributing was the only thing an agent could do: events went
+  in, the directory computed a personalised aggregate from them, and no surface
+  served it. An agent had no reason to record anything, because nothing could
+  read it back.
+
+  Returns `magnitude` (-1..1, how the reports lean) and `confidence` (how much
+  dealing backs that lean). `confidence` is an accumulated weight, **not a
+  probability** — unbounded above, and `0.0` means no visible report at all, at
+  which point `magnitude` must be ignored rather than read as neutral. The
+  response carries a plain-language `reading` saying exactly that, because the
+  numbers alone are indistinguishable from a genuinely middling agent.
+
+  The answer is **anchored on the caller**. It is computed outward from the
+  asker's own position, so two agents asking about the same counterparty
+  legitimately get different numbers and no global score exists. Nothing about
+  who reported, or through whom it reached you, is disclosed — the collapsed pair
+  is the only shape the network's structure is ever served in. Advisory: nothing
+  here ranks, thresholds or decides.
+
+  Kept separate from `attested_reputation` on purpose. That tool fans out across
+  external providers and returns labelled signals; this one is a single anchored
+  aggregate from our own network. Merging them would flatten the distinction
+  between "somebody signed a claim about them" and "this is what the graph looks
+  like from where you stand".
+
+- **`learn('interaction-forms')` — recipes for whole interactions, not just
+  tools.** Ten named interaction shapes (witnessed prediction, precommitment,
+  no-injection opener, probe, trial period, calibration audit, negotiated
+  promise, spirit-vs-letter, counterfactual witness, escrow), each addressable
+  as `learn('form-<name>')` and indexed by the situation it belongs to. Every
+  area guide until now was organised by CAPABILITY — what signing does, what
+  the witness does. These are organised by SITUATION, which is the axis an
+  agent actually arrives on. Distilled from the Manual of Forms; `docs/` does
+  not ship in the wheel, so they are inlined.
+- **Each Form states what this package cannot yet deliver.** The Manual runs
+  ahead of the toolkit in four specific ways — no co-signing tool, no
+  `derivative_signal_policy`, no transport for the claim itself, no stake
+  primitive — and every Form names which of them bite it. Three Forms
+  are marked "shape only": documented so the shape is recognisable, not so it
+  can be run here. A recipe that reads as complete while its load-bearing phase
+  is missing would be a worse defect than an overclaim in prose, because an
+  agent discovers it mid-interaction.
+- **`learn('deciding-what-to-establish')`** — the step before tool selection:
+  whether an interaction needs evidence at all, and which kind. Listed first
+  in `orient()`, with an explicit off-ramp for "most exchanges need none of
+  this". `orient()`'s `start_here` now names what you would be ESTABLISHING
+  before naming a tool.
+
+### Changed
+
+- **Floor bump: `synpareia[witness,profile]>=0.7.0`** (was `>=0.6.0`). `directory.py`
+  imports `ReputationConsent`, which 0.6.x does not export. That import sits inside
+  the `try/except ImportError` that sets `HAS_PROFILE_SDK`, so resolving 0.6.x did
+  **not** raise — it silently disabled the entire directory tool group. A too-low
+  floor fails this way quietly rather than loudly, which is why the number moved
+  rather than the guard.
+
+  Release ordering: `synpareia 0.7.0` must be published to PyPI **and indexed**
+  before this package is synced, or the public repo's CI cannot resolve the
+  dependency. The monorepo gate cannot see this — `[tool.uv.sources]` resolves
+  `synpareia` from `../sdk` as an editable install.
+
+- **`orient()`'s capability block leads with the network layer.** It previously
+  listed four named `offline` capabilities first, then a two-item `network`
+  list in which the entire reputation layer appeared once, at the end, in
+  parentheses — `"Synpareia network (reputation, discovery)"`. An agent that
+  parses structure before prose reads that as "substrate is the product,
+  reputation is a footnote", and one did: a live agent used this package for a
+  fortnight, concluded synpareia was an attestation library with a weak
+  reputation add-on, and argued it back to us. Reputation and Directory are now
+  named capabilities in their own right, `network` precedes `offline`, and a
+  `what_this_is_for` line states which layer is the point and which is the
+  substrate. Pinned by tests, including one that rejects a parenthetical
+  mention.
+
+### Fixed
+
+- **Eight degradation messages named a version that was never the floor.** Every
+  profile-SDK-dependent directory tool returns a message when `synpareia.profile`
+  is unimportable. Eight of the nine said "upgrade SDK to 0.5.0+" and the ninth said
+  "0.7.0+", while the declared floor had moved to 0.7.0 — so an operator on 0.6.x
+  was told to upgrade to a version they already exceeded, and the real cause (a
+  missing `ReputationConsent` export) went unnamed.
+
+  The sentence now derives from a single `MIN_PROFILE_SDK_VERSION` constant, and
+  `tests/test_sdk_floor_message.py` binds that constant to the floor declared in
+  `pyproject.toml` — so bumping the floor without updating the message fails the
+  suite. Nine hand-maintained copies of one number is the defect; the test is what
+  stops a tenth.
+
+- **Tier-3 no longer reports a finding it never made.** `attested_reputation`'s
+  synpareia provider requests `GET /api/v1/agents/{id}/reputation`. No directory
+  deployment serves that route — it is defined by no router; the nearest real route,
+  `/api/v1/verify/{profile_id}`, sits behind `ENABLE_LEGACY_SURFACES` and is off in
+  production; and the v2 surface has no reputation read at all. Verified live: both v1
+  paths 404 while `/api/v2/profiles/{did}` returns 200.
+
+  Every call therefore 404'd, and the provider turned that into
+  `value="not_found", confidence="high"` with the detail *"No synpareia network record
+  for '<id>'."* — a positive claim about the counterparty, asserted at the highest
+  confidence the tool offers, derived from a request nothing answers. An asking agent
+  could not distinguish it from a considered "we looked and there is nothing", which is
+  the entire value of a tier-3 read.
+
+  It now reports `value="unavailable", confidence="low"`, saying plainly that no
+  reputation endpoint is deployed and that this is **not** a statement about the
+  counterparty. `not_found` remains reachable, at high confidence, when the service
+  actually answers with an affirmative absence (`exists: false` — the fixed-shape
+  convention the directory's own v2 endpoint already uses, where an unknown DID is a
+  200 rather than a 404).
+
+  The guide text already said this in prose — "carries no information either way" —
+  while the machine-readable signal said the opposite. Only the prose was honest, and
+  agents read the signal.
+
+  **Why no test caught it:** `tests/stubs/synpareia_network.py` *implements* the
+  requested route, so the suite verified the parser against a server that does not
+  exist. The oracle was derived from the subject. Two existing tests asserted the
+  false behaviour outright and are corrected here; the new
+  `tests/test_synpareia_tier3_honesty.py` stubs a directory that behaves like the real
+  one — 404 on the reputation path — and asserts the property that matters to a caller:
+  that "nothing was looked at" is distinguishable from "we looked and found nothing".
+
+- **`mcp` is now constrained to `>=1.28.1,<2` — this repairs a broken install.**
+  (The floor is a security floor as well as a compatibility one; see **Security** below.)
+
+  `mcp` 2.0.0 (2026-07-28) moved `mcp.server.fastmcp`. Because 0.8.0 declared
+  `mcp[cli]>=1.0` with no upper bound, a fresh `pip install synpareia-trust-mcp`
+  resolved to 2.0.0 and raised `ModuleNotFoundError: No module named
+  'mcp.server.fastmcp'` before the server could start. Installs from
+  2026-07-28T13:45Z (when `mcp` 2.0.0 was published) onward are affected; earlier
+  ones resolved `mcp` 1.x and are fine.
+
+  **If you are on 0.8.0, upgrade to 0.9.0.** This release carries the bound, so
+  `pip install --upgrade synpareia-trust-mcp` is the remedy. A published wheel's
+  metadata cannot be amended, so 0.8.0 stays broken on a fresh install permanently —
+  an install-time upper-bound pin was only ever a stopgap for the days when no fixed
+  release existed. No code or API change is involved; 0.8.0's own code is fine
+  against `mcp` 1.x.
+
+  The bound is deliberate rather than precautionary and stays until the server is
+  ported to the `mcp` 2.x API.
+
+- **`add_evaluation` on an unknown counterparty now returns a recovery, and
+  the recovery is one that works.** It previously returned only
+  `"No record for identifier 'x'"`. The prerequisite was documented — in the
+  docstring, which an agent reaching the error has already read past — and this
+  dead-ended the one reputation workflow a live agent attempted. Two failure
+  shapes are now distinguished: no record at all (→ call
+  `remember_counterparty`, then use the `identifier` from its response), and
+  the far likelier one, passing a **display name** where an identifier is
+  required. Records are keyed by an opaque `local:<uuid>`, and a display name
+  never resolves to the record displaying it, so the naive retry failed
+  identically a second time. The error now names the identifier(s) that work.
+  Identifier resolution itself is unchanged — matching display names would make
+  lookup ambiguous when two counterparties share a name, which is a design call
+  (tracked separately), not a bugfix.
+
+- **The guidance now says that witness timestamping is TWO calls.**
+  `make_claim(witness=True)` signs and returns a `witness_followup`
+  instruction; it does not obtain a seal. An agent stopping there holds proof
+  of authorship and no proof of time — precisely the property the calibration
+  and precommitment shapes exist to establish. Two places previously said
+  otherwise: the `deciding-what-to-establish` guide claimed the flag "produces
+  a sealed claim", and `orient()`'s `a stranger has no reason to believe you`
+  entry named the flag alone. Both corrected. Every agent-facing string that
+  mentions `witness=True` — all ten Forms, all thirteen area guides, every
+  `start_here` entry, and the Forms index — is now checked for the second
+  call, and the breadth of that check is itself asserted.
+- **Every surface now describes the reputation loop that actually exists.**
+  Nine agent-facing strings — the `GAP_NO_CLAIM_TRANSPORT` paragraph (quoted by
+  six Forms), three Forms' own wording, the Forms index, and three `orient()`
+  capability lines — said "reputation is read-only in v1". That stopped being
+  true when `record_interaction` shipped and is now false twice over.
+
+  **Two tests were pinning the falsehood in place.** One required the literal
+  phrase "read-only in v1" in the Forms index; the other asserted `orient()`'s
+  reputation capability still said "read-only". Both were written honestly, to
+  stop an overclaim, and both aged into guards holding an UNDERclaim. They are
+  inverted rather than deleted — the phrase must now be ABSENT from every
+  surface, and the capability line must name both `record_interaction` and
+  `network_reputation`, because a line mentioning only lookups is how the old
+  wording comes back.
+
+  The residual constraint is real and is now stated as what it is: the substance
+  of a claim about a counterparty cannot be published, **by design and not
+  pending a release**. A magnitude and a valence travel; the text does not. The
+  new gap paragraph is asserted to name both halves, so the correction cannot
+  swap one misleading surface for its opposite.
+
+- **Whole-file journal corruption no longer silently loses your local
+  records.** An undecodable or wrong-shaped `counterparties.json` used to read
+  as empty, and the next write would then overwrite the (recoverable) file with
+  a fresh list — silent total data loss (pentest INFO-2). It is now moved aside
+  to `counterparties.json.corrupt-<timestamp>` before the store starts empty, so
+  an operator can recover it. If the move itself can't happen (a read-only fs),
+  the store now **refuses** (`JournalCorruptError`) rather than proceed to a
+  state where the next write would overwrite the unpreserved file. Per-row
+  malformed handling (0.7.x) is unchanged.
+- **`profile.json` is now written atomically** (temp file + rename), closing a
+  durability gap where a crash mid-rewrite could truncate or empty the file and
+  lose the persisted keypair + DID. No behaviour change on the happy path.
+
+### Security
+
+- **The `mcp` floor moved from `>=1.0` to `>=1.28.1`, which is a security floor and
+  not only the compatibility bound described under Fixed.** `mcp` 1.27.0 carries
+  PYSEC-2026-3481 and PYSEC-2026-3482 (fixed in 1.27.2) and PYSEC-2026-3483 (fixed in
+  1.28.1). **None is reachable in this package's stdio-only configuration** — they
+  require SSE/StreamableHTTP, the deprecated `websocket_server`, or experimental
+  `enable_tasks`, none of which the trust MCP enables. Our own lockfile was
+  nonetheless pinning 1.27.0, so an install resolving from it inherited all three.
+  Upgrading to 0.9.0 raises the floor past them.
+
+  (The `python-multipart`, `pyjwt` and `idna` floors alongside it are unchanged from
+  0.8.0 and are not part of this release.)
+
+### Internal
+
+- Extracted the shared `atomic_write_bytes` / `quarantine_corrupt_file` helpers
+  (`fsutil`) used by both the journal and profile stores; removed a vestigial
+  `_record_to_dict` passthrough and de-duplicated the identifier-match predicate
+  (`_matches`) across the read and mutate paths. No tool-contract change.
+
 ## [0.8.0] - 2026-07-14
 
 ### Removed
@@ -31,7 +308,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line). This only tidies the committed dev/CI lockfile so the public repo does
   not carry a flagged pin.
 
-## [0.7.0] - 2026-07-03
+## [0.7.0] - 2026-07-06
 
 Privacy-completion release: makes the data-protection posture the prove/vet/bind
 copy already promises actually true in the product. Closes the two GDPR §6 gaps
@@ -167,7 +444,7 @@ Round-trip symmetry + truthful metadata, ahead of the MCP-marketplace listings
   `verify_claim.commitment_hash`, `remember_counterparty.namespace_id` →
   `evaluate_agent.id`, and `verify_claim.agent_did` (no producer emits `agent_did`).
 
-## [0.6.1] - 2026-07-01
+## [0.6.1] - 2026-07-02
 
 Funnel + error-ergonomics polish surfaced by the pre-marketplace
 fresh-agent battle test (`docs/explorations/pre-marketplace-battletest.md`).
@@ -349,7 +626,7 @@ calling `witness_seal_timestamp`.
   content; `witness_followup` absent when `witness=False`; configured
   vs unconfigured witness paths each return the right shape.
 
-## [0.4.0] - 2026-04-23
+## [0.4.0] - 2026-04-30
 
 Four-tier reputation-evidence taxonomy ships as the v1 tool surface. The
 taxonomy distinguishes where evidence sits on two orthogonal axes:
@@ -520,7 +797,7 @@ Tool surface reshape around a tiered information architecture (orient → learn 
 - Recording roundtrip verified end-to-end via `synpareia.verify_export` with the 0.3.0 policy-aware chain — tamper detection now covers the POLICY genesis block in addition to content blocks
 - Witness seal requests no longer send `requester_id` (sparse-witness construction, ratifies Position 4 of the counterparty-reputation exploration)
 
-## [0.2.0] - 2026-04-16
+## [0.2.0] - 2026-04-14
 
 Witness service integration — timestamp seals, state seals, blind conclusions, liveness challenges.
 
@@ -533,7 +810,7 @@ Witness service integration — timestamp seals, state seals, blind conclusions,
 - `submit_blind_conclusion` / `get_blind_conclusion` — witness-mediated blind conclusion flow
 - Configuration via `SYNPAREIA_WITNESS_URL`, `SYNPAREIA_WITNESS_ACCESS_TOKEN`
 
-## [0.1.0] - 2026-04-12
+## [0.1.0] - 2026-04-14
 
 Initial release. 12 tools covering identity, signing, commitments, verified conversations.
 

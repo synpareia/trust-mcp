@@ -27,12 +27,13 @@ from __future__ import annotations
 import contextlib
 import json
 import math
-import os
 import sys
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+
+from synpareia_trust_mcp.fsutil import atomic_write_bytes, quarantine_corrupt_file
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -61,6 +62,18 @@ MAX_SIGNED_CLAIMS_PER_RECORD = 256
 
 class RecordNotFoundError(LookupError):
     """Raised when an operation targets a record that does not exist."""
+
+
+class JournalCorruptError(RuntimeError):
+    """The journal file is whole-file-corrupt AND could not be quarantined.
+
+    `_load` normally degrades a whole-file-corrupt `counterparties.json` by
+    moving it aside and returning an empty journal. Only when that move fails
+    (a read-only fs, a permission quirk) does it raise this instead of returning
+    `[]` — because returning empty would let the next `_save` `os.replace` over,
+    and permanently destroy, the unpreserved corrupt file. Raising keeps the
+    file untouched on disk so an operator can recover it manually.
+    """
 
 
 @dataclass
@@ -192,7 +205,7 @@ class JournalStore:
     def get(self, identifier: str) -> AgentRecord | None:
         """Fetch by primary identifier or any alias. Returns None if missing."""
         for record in self._load():
-            if record.identifier == identifier or identifier in record.aliases:
+            if _matches(record, identifier):
                 return record
         return None
 
@@ -300,16 +313,19 @@ class JournalStore:
             return []
         try:
             data = json.loads(self._path.read_text())
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return []
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            return self._quarantine_and_empty(f"{type(exc).__name__}: {exc}")
         if not isinstance(data, list):
-            return []
+            return self._quarantine_and_empty(
+                f"top-level JSON is {type(data).__name__}, expected a list"
+            )
         # Skip individual malformed rows (a hand-edited or partially-written
         # counterparties.json) rather than raising out of a read tool: a single
         # bad row must not crash recall/remember/add_evaluation/find/forget. The
         # skip is logged to stderr (never stdout — the stdio-MCP JSON-RPC
-        # channel). Whole-file corruption is handled above (returns empty);
-        # deeper quarantine-vs-drop durability is tracked separately (task #66).
+        # channel). Whole-file corruption is quarantined above (the corrupt file
+        # is moved aside before we start empty, so a later _save can't overwrite
+        # and permanently lose it — pentest INFO-2).
         records: list[AgentRecord] = []
         for item in data:
             try:
@@ -338,20 +354,61 @@ class JournalStore:
             allow_nan=False,
         ).encode()
 
-        tmp = self._path.with_suffix(".json.tmp")
-        if tmp.exists():
-            tmp.unlink()
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(payload)
-        os.replace(tmp, self._path)
-        with contextlib.suppress(OSError):
-            self._path.chmod(0o600)
+        atomic_write_bytes(self._path, payload)
+
+    def _quarantine_and_empty(self, reason: str) -> list[AgentRecord]:
+        """Preserve a whole-file-corrupt journal, then read as empty.
+
+        Whole-file corruption (undecodable bytes, or a non-list top level) used
+        to return `[]` silently — and the next `_save` would then overwrite the
+        unreadable-but-possibly-recoverable file with a fresh list, losing the
+        data permanently (pentest INFO-2). We move the corrupt file aside to
+        `counterparties.json.corrupt-<timestamp>` first so an operator can recover
+        it, then return `[]` so the read tool still doesn't crash.
+
+        If the move itself fails (a read-only fs, a permission quirk), we do NOT
+        return `[]`: that would leave the corrupt file in place for the next
+        `_save` to `os.replace` over — the identical data-loss it exists to
+        prevent. Instead we raise `JournalCorruptError`, leaving the file
+        untouched on disk. All paths log to stderr (never stdout — the stdio-MCP
+        JSON-RPC channel).
+        """
+        backup = quarantine_corrupt_file(self._path)
+        if backup is None:
+            print(
+                f"[synpareia-trust-mcp] {self._path.name} is corrupt ({reason}) and could "
+                f"not be moved aside; refusing to touch the journal so it isn't overwritten",
+                file=sys.stderr,
+                flush=True,
+            )
+            msg = (
+                f"{self._path} is corrupt ({reason}) and could not be quarantined; "
+                "refusing to proceed so a later write cannot overwrite it. "
+                "Move or repair the file manually to recover."
+            )
+            raise JournalCorruptError(msg)
+        print(
+            f"[synpareia-trust-mcp] {self._path.name} is corrupt ({reason}); "
+            f"moved aside to {backup.name}; starting from an empty journal",
+            file=sys.stderr,
+            flush=True,
+        )
+        return []
+
+
+def _matches(record: AgentRecord, identifier: str) -> bool:
+    """True if `identifier` is the record's primary id or one of its aliases.
+
+    The single source of truth for identifier resolution — shared by the read
+    path (`get`) and the mutate path (`_find_by_identifier`) so the two can't
+    drift on what "matches this counterparty" means.
+    """
+    return record.identifier == identifier or identifier in record.aliases
 
 
 def _find_by_identifier(records: list[AgentRecord], identifier: str) -> AgentRecord | None:
     for r in records:
-        if r.identifier == identifier or identifier in r.aliases:
+        if _matches(r, identifier):
             return r
     return None
 

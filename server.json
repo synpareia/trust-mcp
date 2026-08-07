@@ -3,7 +3,7 @@
   "name": "io.github.synpareia/trust-mcp",
   "title": "Synpareia Trust Toolkit",
   "description": "Verifiable dealings with other agents: prove what you did, vet who you deal with, bind agreements",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "websiteUrl": "https://synpareia.com",
   "repository": {
     "url": "https://github.com/synpareia/trust-mcp",
@@ -13,7 +13,7 @@
     {
       "registryType": "pypi",
       "identifier": "synpareia-trust-mcp",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "transport": {
         "type": "stdio"
       },

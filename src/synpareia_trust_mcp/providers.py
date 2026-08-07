@@ -344,13 +344,40 @@ async def query_synpareia_network(identifier: str, network_url: str) -> list[Tru
                 f"{network_url.rstrip('/')}/api/v1/agents/{safe_id}/reputation",
             )
             if status == 404 or data is None:
+                #: A 404 HERE MEANS THE ROUTE IS ABSENT, NOT THAT THE AGENT IS UNKNOWN.
+                #:
+                #: No deployment serves the route this function requests, and production
+                #: serves no reputation read at all. `/api/v1/agents/{id}/reputation`
+                #: (what this function requests) is defined by no router; the nearest real
+                #: route, `/api/v1/verify/{profile_id}`, sits behind ENABLE_LEGACY_SURFACES
+                #: and is off in production; and the v2 surface has no reputation read at
+                #: all — that is the A2 gap. Verified live: both v1 paths return 404 while
+                #: `/api/v2/profiles/{did}` returns 200.
+                #:
+                #: So every 404 today is "this deployment serves no reputation", and
+                #: reporting it as `not_found` at HIGH confidence stated a positive fact
+                #: about the counterparty — "No synpareia network record for X" — that was
+                #: derived from a request nothing answers. An asking agent could not tell
+                #: that apart from a real, considered "we looked and there is nothing",
+                #: which is the whole value of the tier. The guide already said so in prose
+                #: while the machine-readable signal said the opposite.
+                #:
+                #: When the read route lands it must answer 200 with a shape, the way the
+                #: directory's own v2 endpoint does — it returns 200 + `exists: false` for
+                #: an unknown DID precisely so that absence is an ANSWER and not a hole.
+                #: Then `not_found` becomes reachable through the branch below, on evidence.
                 return [
                     TrustSignal(
                         provider="synpareia",
                         signal_type="lookup",
-                        value="not_found",
-                        confidence="high",
-                        detail=f"No synpareia network record for '{identifier}'.",
+                        value="unavailable",
+                        confidence="low",
+                        detail=(
+                            "No reputation read endpoint is deployed on this synpareia "
+                            "directory, so nothing was learned about "
+                            f"'{identifier}' — this is NOT a statement that the "
+                            "counterparty has no record. Carries no information either way."
+                        ),
                     )
                 ]
     except httpx.HTTPError as e:
@@ -361,6 +388,21 @@ async def query_synpareia_network(identifier: str, network_url: str) -> list[Tru
                 value="unavailable",
                 confidence="low",
                 detail=f"Synpareia network error: {type(e).__name__}",
+            )
+        ]
+
+    #: An AFFIRMATIVE absence — the service answered, and its answer is "no record". This
+    #: is the branch `not_found` belongs in: it rests on a response, so "high" is earned.
+    #: `exists`/`found` mirror the directory's v2 fixed-shape convention, where an unknown
+    #: DID is a 200 carrying `exists: false` rather than a 404.
+    if data.get("exists") is False or data.get("found") is False:
+        return [
+            TrustSignal(
+                provider="synpareia",
+                signal_type="lookup",
+                value="not_found",
+                confidence="high",
+                detail=f"The synpareia directory answered: no record for '{identifier}'.",
             )
         ]
 

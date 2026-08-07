@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "synpareia-trust-mcp"
-version = "0.8.0"
+version = "0.9.0"
 description = "Trust tools for agent-to-agent dealings — prove, vet, and bind with verifiable evidence (MCP server)"
 readme = "README.md"
 license = "Apache-2.0"
@@ -24,8 +24,26 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "synpareia[witness,profile]>=0.6.0",
-    "mcp[cli]>=1.0",
+    # 0.7.0 floor, not 0.6.0: `directory.py` imports `ReputationConsent`, which
+    # 0.6.x does not export. The import sits inside the try/except that sets
+    # HAS_PROFILE_SDK, so resolving 0.6.x does not raise — it silently disables
+    # the ENTIRE directory tool group and returns "upgrade SDK to 0.5.0+", which
+    # names the wrong version and hides the real cause. A too-low floor fails
+    # this way silently rather than loudly, so it is worth stating the reason
+    # next to the number.
+    "synpareia[witness,profile]>=0.7.0",
+    # The upper bound is load-bearing, not caution. mcp 2.0.0 (released 2026-07-28)
+    # moved `mcp.server.fastmcp`, so an unbounded floor resolved to 2.0.0 and this
+    # package died on first import. Version 0.8.0 shipped with the unbounded floor and
+    # stays permanently broken on a fresh install — a released wheel's metadata cannot
+    # be amended. 0.9.0 is the fix, and the remedy for anyone on 0.8.0 is to upgrade,
+    # not to pin at install time. Remove the bound only once ported to the mcp 2.x API.
+    # Floor is a security floor as well as a compatibility one: 1.27.0 carries
+    # PYSEC-2026-3481/3482 (fix 1.27.2) and PYSEC-2026-3483 (fix 1.28.1). None is
+    # reachable in our stdio-only configuration (they need SSE/StreamableHTTP,
+    # the deprecated websocket_server, or experimental enable_tasks), but our own
+    # lockfile was pinning 1.27.0 and the audit is red on it. Floor, then re-lock.
+    "mcp[cli]>=1.28.1,<2",
     "python-multipart>=0.0.30",  # security floor — CVE-2026-42561 (0.0.27) + CVE-2026-53538/53539 (0.0.28→fix 0.0.30, ~2026-06-19); transitive via mcp
     "pyjwt>=2.13.0",  # security floor — PYSEC-2026-176/178/179 (2.12.1→fix 2.13.0, ~2026-06-19); transitive via mcp[cli]
     "idna>=3.15",  # security floor — PYSEC-2026-215 (3.11→3.15)

@@ -37,10 +37,17 @@ class TestAttestedReputationWithProviders:
     def test_not_found_returns_lookup_signals(self, app_ctx_with_stubs) -> None:
         ctx, app = app_ctx_with_stubs
         result = _run(attested_reputation(identifier="does-not-exist-xyz", ctx=ctx))
-        # Both providers return not_found for unknown identifiers
+        # The two Tier-3 providers answer an unknown identifier DIFFERENTLY, and the
+        # difference is the point. MolTrust is a real service that answers "no record".
+        # The synpareia directory serves no reputation read endpoint at all, so its 404
+        # means "nothing was asked of anything" — reporting that as `not_found` asserted
+        # a fact about the counterparty that no call established. This test asserted the
+        # old, false behaviour and so could never have caught it.
         lookup_signals = [s for s in result["signals"] if s["signal_type"] == "lookup"]
         assert len(lookup_signals) >= 1
-        assert all(s["value"] == "not_found" for s in lookup_signals)
+        by_provider = {s["provider"]: s["value"] for s in lookup_signals}
+        assert by_provider.get("moltrust") == "not_found"
+        assert by_provider.get("synpareia") == "unavailable"
 
 
 class TestAttestedReputationPartialConfig:

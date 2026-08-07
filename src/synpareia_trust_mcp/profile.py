@@ -11,6 +11,8 @@ from pathlib import Path
 
 import synpareia
 
+from synpareia_trust_mcp.fsutil import atomic_write_bytes
+
 
 class ProfileCorruptError(RuntimeError):
     """Raised when profile.json exists but cannot be parsed/decoded.
@@ -125,9 +127,12 @@ class ProfileManager:
     def _save_profile(self, path: Path, profile: synpareia.Profile) -> None:
         """Persist profile atomically with 0o600 permissions.
 
-        Using os.open with O_CREAT|O_TRUNC and mode=0o600 means the file
-        never exists with a more permissive mode — closes the TOCTOU race
-        that a later chmod() would introduce (ADV-020).
+        Writes via a temp file + atomic rename (`atomic_write_bytes`): a crash
+        mid-write leaves either the intact old profile or the intact new one,
+        never a truncated/empty `profile.json` (which would lose the persisted
+        keypair + DID). The temp file is opened `O_EXCL` with mode 0o600, so the
+        file never exists with a wider mode — closing the chmod-after-create
+        TOCTOU race (ADV-020).
         """
         self._data_dir.mkdir(parents=True, exist_ok=True)
         # Harden the data dir too — private key lives inside it.
@@ -144,11 +149,7 @@ class ProfileManager:
             indent=2,
         ).encode()
 
-        if path.exists():
-            path.unlink()
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(payload)
+        atomic_write_bytes(path, payload)
 
     def _generate_and_save(self, path: Path) -> synpareia.Profile:
         profile = synpareia.generate()

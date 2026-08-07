@@ -127,13 +127,22 @@ class TestEvaluateAgentUnknown:
         ctx, _ = app_ctx_with_stubs
         result = _call(ctx, namespace="synpareia", id="nobody-by-this-name")
 
-        # Tier 3 still reports structured signals (lookup=not_found per provider).
+        # Tier 3 still reports structured signals, but the two providers say different
+        # things and must not be collapsed: MolTrust answers "no record"; synpareia has
+        # no deployed reputation read, so it reports `unavailable` rather than claiming
+        # the counterparty is unknown to it.
         not_found_providers = {
             s["provider"]
             for s in result["tier3"]
             if s.get("signal_type") == "lookup" and s.get("value") == "not_found"
         }
-        assert not_found_providers == {"synpareia", "moltrust"}
+        assert not_found_providers == {"moltrust"}
+        unavailable_providers = {
+            s["provider"]
+            for s in result["tier3"]
+            if s.get("signal_type") == "lookup" and s.get("value") == "unavailable"
+        }
+        assert unavailable_providers == {"synpareia"}
 
 
 class TestEvaluateAgentZeroConfig:

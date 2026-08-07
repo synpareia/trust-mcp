@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from synpareia_trust_mcp.journal import (
+    JournalCorruptError,
     JournalStore,
     RecordNotFoundError,
 )
@@ -34,6 +35,66 @@ class TestLoadRobustness:
         store._path.parent.mkdir(parents=True, exist_ok=True)
         store._path.write_text(json.dumps({"not": "a list"}))
         assert JournalStore(store._data_dir).all() == []
+
+    def test_undecodable_whole_file_is_quarantined_not_lost(
+        self, store: JournalStore, capsys
+    ) -> None:
+        # Whole-file corruption (undecodable bytes) must NOT be silently emptied:
+        # the corrupt file is moved aside so a later _save can't overwrite and
+        # permanently lose it (pentest INFO-2).
+        store._path.parent.mkdir(parents=True, exist_ok=True)
+        store._path.write_text("this is not json {{{")
+
+        reloaded = JournalStore(store._data_dir)
+        assert reloaded.all() == []  # read tool still degrades gracefully
+
+        # The corrupt bytes are preserved in a sibling .corrupt-* file.
+        corrupt = list(store._data_dir.glob("counterparties.json.corrupt-*"))
+        assert len(corrupt) == 1
+        assert corrupt[0].read_text() == "this is not json {{{"
+        assert "is corrupt" in capsys.readouterr().err
+
+        # A subsequent write starts a fresh file WITHOUT clobbering the quarantine.
+        reloaded.upsert(namespace="slack", namespace_id="G", display_name="new")
+        assert corrupt[0].read_text() == "this is not json {{{"
+        assert reloaded._path.exists()
+
+    def test_non_list_top_level_is_quarantined(self, store: JournalStore) -> None:
+        # A structurally-valid but wrong-shaped file (a dict, not a list) is also
+        # preserved rather than dropped — the deeper of the two corruption modes.
+        store._path.parent.mkdir(parents=True, exist_ok=True)
+        store._path.write_text(json.dumps({"not": "a list"}))
+
+        assert JournalStore(store._data_dir).all() == []
+        corrupt = list(store._data_dir.glob("counterparties.json.corrupt-*"))
+        assert len(corrupt) == 1
+        assert json.loads(corrupt[0].read_text()) == {"not": "a list"}
+
+    def test_unquarantinable_corruption_refuses_rather_than_risk_overwrite(
+        self, store: JournalStore, monkeypatch, capsys
+    ) -> None:
+        # PR #407 review finding #1: if the corrupt file can't be moved aside
+        # (quarantine_corrupt_file returns None), returning [] would let the next
+        # _save os.replace over — and destroy — the still-present corrupt file.
+        # So _load must RAISE instead, leaving the file untouched on disk.
+        import synpareia_trust_mcp.journal as journal_mod
+
+        store._path.parent.mkdir(parents=True, exist_ok=True)
+        store._path.write_text("undecodable {{{")
+        monkeypatch.setattr(journal_mod, "quarantine_corrupt_file", lambda _p: None)
+
+        reloaded = JournalStore(store._data_dir)
+        with pytest.raises(JournalCorruptError):
+            reloaded.all()  # read path refuses rather than silently emptying
+        # The corrupt file is untouched (not moved, not overwritten).
+        assert store._path.read_text() == "undecodable {{{"
+        assert "refusing to touch the journal" in capsys.readouterr().err
+
+        # And a mutate can't destroy it either: upsert loads first, so it raises
+        # before ever reaching _save/os.replace.
+        with pytest.raises(JournalCorruptError):
+            reloaded.upsert(namespace="slack", namespace_id="G", display_name="x")
+        assert store._path.read_text() == "undecodable {{{"
 
 
 @pytest.fixture()
